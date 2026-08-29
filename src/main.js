@@ -1,4 +1,5 @@
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm";
+import { isDrawingGesture, isPinchReleaseGesture } from "./gestures.js";
 import { recognizeStroke } from "./recognizer.js";
 
 const MODEL_URL =
@@ -280,14 +281,6 @@ function clearStroke() {
   redraw();
 }
 
-function isDrawingGesture(landmarks) {
-  const indexExtended = landmarks[8].y < landmarks[6].y;
-  const middleCurled = landmarks[12].y > landmarks[10].y;
-  const ringCurled = landmarks[16].y > landmarks[14].y;
-  const pinkyCurled = landmarks[20].y > landmarks[18].y;
-  return indexExtended && middleCurled && ringCurled && pinkyCurled;
-}
-
 function appendPoint(point, timestamp) {
   appendSample(state.stroke, point, timestamp, true);
   redraw(point);
@@ -369,6 +362,7 @@ function handleLandmarks(landmarks, timestamp) {
   }
 
   const drawing = isDrawingGesture(landmarks);
+  const pinchRelease = isPinchReleaseGesture(landmarks);
 
   if (state.phase === PHASE.SUBMITTED) {
     if (!drawing && timestamp >= state.cooldownUntil) {
@@ -379,7 +373,13 @@ function handleLandmarks(landmarks, timestamp) {
   }
 
   if (state.phase === PHASE.ENDING) {
-    if (drawing) {
+    if (pinchRelease) {
+      if (timestamp - state.phaseSince >= GESTURE_UP_DEBOUNCE_MS) {
+        submitStroke(timestamp);
+      } else {
+        redraw(fingertip);
+      }
+    } else if (drawing) {
       transitionToDrawing(timestamp);
       appendPoint(fingertip, timestamp);
     } else if (timestamp - state.phaseSince >= GESTURE_UP_DEBOUNCE_MS) {
@@ -391,7 +391,9 @@ function handleLandmarks(landmarks, timestamp) {
   }
 
   if (state.phase === PHASE.PAUSED) {
-    if (drawing && timestamp - state.pauseSince <= TRACKING_LOSS_GRACE_MS) {
+    if (pinchRelease) {
+      transitionToEnding(timestamp, "Release gesture detected...");
+    } else if (drawing && timestamp - state.pauseSince <= TRACKING_LOSS_GRACE_MS) {
       transitionToDrawing(timestamp);
       appendPoint(fingertip, timestamp);
     } else if (timestamp - state.pauseSince > TRACKING_LOSS_GRACE_MS) {
@@ -402,7 +404,10 @@ function handleLandmarks(landmarks, timestamp) {
   }
 
   if (state.phase === PHASE.DRAWING) {
-    if (drawing) {
+    if (pinchRelease) {
+      transitionToEnding(timestamp, "Release gesture detected...");
+      redraw(fingertip);
+    } else if (drawing) {
       appendPoint(fingertip, timestamp);
     } else {
       transitionToEnding(timestamp);
@@ -412,7 +417,7 @@ function handleLandmarks(landmarks, timestamp) {
   }
 
   if (state.phase === PHASE.ARMING) {
-    if (!drawing) {
+    if (!drawing || pinchRelease) {
       clearStroke();
       transitionToReady(timestamp);
       redraw(fingertip);

@@ -14,9 +14,32 @@
     <div id="results"></div>
     <script type="module">
       import { recognizeStroke } from "../src/recognizer.js";
+      import { isDrawingGesture, isPinchReleaseGesture } from "../src/gestures.js";
 
       const results = document.querySelector("#results");
       const tests = [];
+      const landmarks = (thumbIndexDistance) => {
+        const points = Array.from({ length: 21 }, () => ({ x: 0, y: 0 }));
+        points[0] = { x: 0, y: 0 };
+        points[9] = { x: 0, y: 1 };
+        points[4] = { x: 0, y: 0.5 };
+        points[8] = { x: thumbIndexDistance, y: 0.5 };
+        points[6] = { x: 0, y: 0.8 };
+        points[8].y = 0.2;
+        points[10] = { x: 0, y: 0.4 };
+        points[12] = { x: 0, y: 0.8 };
+        points[14] = { x: 0, y: 0.4 };
+        points[16] = { x: 0, y: 0.8 };
+        points[18] = { x: 0, y: 0.4 };
+        points[20] = { x: 0, y: 0.8 };
+        return points;
+      };
+      const addGestureTest = (name, points, expectedDrawing, expectedPinch) => {
+        const passed =
+          isDrawingGesture(points) === expectedDrawing &&
+          isPinchReleaseGesture(points) === expectedPinch;
+        tests.push({ name, passed, result: { shape: null } });
+      };
       const add = (name, points, expected, expectedOrientation = null) => {
         const result = recognizeStroke(points);
         const passed =
@@ -69,6 +92,9 @@
             y: center.y + Math.sin(angle) * radial,
           };
         });
+
+      addGestureTest("extended finger draws", landmarks(0.8), true, false);
+      addGestureTest("thumb-index pinch releases", landmarks(0.2), false, true);
 
       add("horizontal line", lineStroke({ x: 40, y: 88 }, { x: 340, y: 92 }, 13, 2), "line", "horizontal");
       add("vertical line", lineStroke({ x: 230, y: 40 }, { x: 224, y: 300 }, 13, 2), "line", "vertical");
