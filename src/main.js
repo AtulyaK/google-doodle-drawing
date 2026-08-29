@@ -262,6 +262,9 @@ function clearStroke() {
 }
 
 function appendPoint(point, timestamp) {
+  if (!state.spaceHeld) {
+    return;
+  }
   appendSample(state.stroke, point, timestamp, true);
   redraw(point);
 }
@@ -314,15 +317,28 @@ function submitStroke(timestamp) {
 }
 
 function handleLandmarks(landmarks, timestamp) {
+  if (state.complete) {
+    state.cursor = null;
+    redraw();
+    return;
+  }
+
+  if (!state.spaceHeld) {
+    state.cursor = null;
+    if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
+      clearStroke();
+      transitionToReady(timestamp);
+    } else if (state.phase === PHASE.SUBMITTED) {
+      transitionToReady(timestamp);
+    }
+    redraw();
+    return;
+  }
+
   const rawPoint = canvasPoint(landmarks[8]);
   const filteredPoint = state.pointFilter.filter(rawPoint, timestamp);
   const fingertip = canvasSample(filteredPoint, timestamp);
   state.cursor = fingertip;
-
-  if (state.complete) {
-    redraw(fingertip);
-    return;
-  }
 
   if (state.phase === PHASE.SUBMITTED) {
     transitionToReady(timestamp);
@@ -344,11 +360,7 @@ function handleLandmarks(landmarks, timestamp) {
   }
 
   if (state.phase === PHASE.DRAWING) {
-    if (state.spaceHeld) {
-      appendPoint(fingertip, timestamp);
-    } else {
-      submitStroke(timestamp);
-    }
+    appendPoint(fingertip, timestamp);
     return;
   }
 
