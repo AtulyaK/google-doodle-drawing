@@ -14,31 +14,18 @@
     <div id="results"></div>
     <script type="module">
       import { recognizeStroke } from "../src/recognizer.js";
-      import { isDrawingGesture, isPinchReleaseGesture } from "../src/gestures.js";
+      import { PINCH_OFF_RATIO, PINCH_ON_RATIO, pinchRatio, updatePinchState } from "../src/gestures.js";
+      import { VectorOneEuroFilter } from "../src/one-euro-filter.js";
 
       const results = document.querySelector("#results");
       const tests = [];
-      const landmarks = (thumbIndexDistance) => {
-        const points = Array.from({ length: 21 }, () => ({ x: 0, y: 0 }));
-        points[0] = { x: 0, y: 0 };
-        points[9] = { x: 0, y: 1 };
-        points[4] = { x: 0, y: 0.5 };
-        points[8] = { x: thumbIndexDistance, y: 0.5 };
-        points[6] = { x: 0, y: 0.8 };
-        points[8].y = 0.2;
-        points[10] = { x: 0, y: 0.4 };
-        points[12] = { x: 0, y: 0.8 };
-        points[14] = { x: 0, y: 0.4 };
-        points[16] = { x: 0, y: 0.8 };
-        points[18] = { x: 0, y: 0.4 };
-        points[20] = { x: 0, y: 0.8 };
+      const landmarks = (ratio) => {
+        const points = Array.from({ length: 21 }, () => ({ x: 0, y: 0, z: 0 }));
+        points[5] = { x: -0.35, y: 0, z: 0 };
+        points[17] = { x: 0.35, y: 0, z: 0 };
+        points[4] = { x: 0, y: 0.2, z: 0.05 };
+        points[8] = { x: ratio * 0.7, y: 0.2, z: 0.05 };
         return points;
-      };
-      const addGestureTest = (name, points, expectedDrawing, expectedPinch) => {
-        const passed =
-          isDrawingGesture(points) === expectedDrawing &&
-          isPinchReleaseGesture(points) === expectedPinch;
-        tests.push({ name, passed, result: { shape: null } });
       };
       const add = (name, points, expected, expectedOrientation = null) => {
         const result = recognizeStroke(points);
@@ -93,8 +80,78 @@
           };
         });
 
-      addGestureTest("extended finger draws", landmarks(0.8), true, false);
-      addGestureTest("thumb-index pinch releases", landmarks(0.2), false, true);
+      const rotateLandmarks = (points, angles) => {
+        const [xAngle, yAngle, zAngle] = angles;
+        const sinX = Math.sin(xAngle);
+        const cosX = Math.cos(xAngle);
+        const sinY = Math.sin(yAngle);
+        const cosY = Math.cos(yAngle);
+        const sinZ = Math.sin(zAngle);
+        const cosZ = Math.cos(zAngle);
+        return points.map((point) => {
+          const y1 = point.y * cosX - point.z * sinX;
+          const z1 = point.y * sinX + point.z * cosX;
+          const x2 = point.x * cosY + z1 * sinY;
+          const z2 = -point.x * sinY + z1 * cosY;
+          return {
+            x: x2 * cosZ - y1 * sinZ,
+            y: x2 * sinZ + y1 * cosZ,
+            z: z2,
+          };
+        });
+      };
+
+      const openHand = landmarks(0.8);
+      const pinchedHand = landmarks(0.2);
+      const tiltedPinchedHand = rotateLandmarks(pinchedHand, [0.8, -0.55, 0.9]);
+      tests.push({
+        name: "open pinch ratio leaves pen unlatched",
+        passed: !updatePinchState(false, openHand),
+        result: { shape: null },
+      });
+      tests.push({
+        name: "stable pinch arms pen",
+        passed: updatePinchState(false, pinchedHand),
+        result: { shape: null },
+      });
+      tests.push({
+        name: "pinch hysteresis keeps pen armed",
+        passed:
+          updatePinchState(true, landmarks((PINCH_ON_RATIO + PINCH_OFF_RATIO) / 2)) &&
+          !updatePinchState(true, landmarks(PINCH_OFF_RATIO)),
+        result: { shape: null },
+      });
+      tests.push({
+        name: "tilted hand keeps normalized pinch detection",
+        passed:
+          Math.abs(pinchRatio(tiltedPinchedHand) - pinchRatio(pinchedHand)) < 0.001 &&
+          updatePinchState(false, tiltedPinchedHand),
+        result: { shape: null },
+      });
+
+      const filter = new VectorOneEuroFilter({ minCutoff: 1.2, beta: 0.04 });
+      filter.filter({ x: 0, y: 0 }, 0);
+      const filteredJump = filter.filter({ x: 100, y: 0 }, 100);
+      tests.push({
+        name: "one euro filter smooths a sudden fingertip jump",
+        passed: filteredJump.x > 0 && filteredJump.x < 100,
+        result: { shape: null },
+      });
+
+      const capturedEndpoint = { x: 240, y: 120 };
+      const releaseMovement = [{ x: 220, y: 100 }, { x: 190, y: 80 }];
+      const submittedStroke = [capturedEndpoint].map(({ x, y }) => ({ x, y }));
+      tests.push({
+        name: "pinch release movement stays outside submitted stroke",
+        passed:
+          submittedStroke.length === 1 &&
+          submittedStroke[0].x === capturedEndpoint.x &&
+          submittedStroke[0].y === capturedEndpoint.y &&
+          !submittedStroke.some((point) =>
+            releaseMovement.some((releasePoint) => point.x === releasePoint.x && point.y === releasePoint.y),
+          ),
+        result: { shape: null },
+      });
 
       add("horizontal line", lineStroke({ x: 40, y: 88 }, { x: 340, y: 92 }, 13, 2), "line", "horizontal");
       add("vertical line", lineStroke({ x: 230, y: 40 }, { x: 224, y: 300 }, 13, 2), "line", "vertical");
@@ -142,7 +199,7 @@
       );
 
       results.innerHTML = tests
-        .map(({ name, passed, result }) => `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name} (${result.shape ?? "rejected"})</p>`)
+        .map(({ name, passed, result }) => `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name} (${result.shape ?? "rejected"}, confidence ${(result.confidence ?? 0).toFixed(2)})</p>`)
         .join("");
       if (tests.some(({ passed }) => !passed)) {
         throw new Error("One or more recognizer checks failed.");

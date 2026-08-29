@@ -14,8 +14,8 @@
           <p class="eyebrow">Camera-powered drawing practice</p>
           <h1>Doodle Motion</h1>
           <p class="hero-copy">
-            Hold your index finger up to draw, then pinch your thumb and index finger to release.
-            Short tracking dropouts while you are still drawing are okay.
+            Pinch once to arm the virtual pen, release, and draw with your index fingertip.
+            Pinch again to submit without drawing a return line.
           </p>
         </div>
         <div class="hero-badge" aria-label="On-device processing">
@@ -33,6 +33,7 @@
             </div>
             <div class="toolbar-actions">
               <button id="startButton" class="button button-primary" type="button">Start camera</button>
+              <button id="finishButton" class="button button-ghost" type="button" disabled>Finish stroke</button>
               <button id="resetButton" class="button button-ghost" type="button">Reset</button>
             </div>
           </div>
@@ -48,10 +49,10 @@
           </div>
 
           <div class="gesture-hint">
-            <span class="hint-icon" aria-hidden="true">☝</span>
-            Keep your index finger extended to draw. Pinch your thumb and index finger to release and submit.
-            Lowering your finger still works as a fallback.
-            The tracker allows a short pause if your hand slips out of view.
+            <span class="hint-icon" aria-hidden="true">🤏</span>
+            Pinch and hold to arm, release to draw, then pinch and hold again to submit.
+            Use <strong>Finish stroke</strong> if tracking slips or you prefer a button.
+            Pinch and release frames never enter the stroke.
           </div>
         </div>
 
@@ -95,7 +96,7 @@
 
           <div class="feedback-panel" aria-live="polite">
             <p id="feedbackTitle">Ready when you are</p>
-            <p id="feedbackDetail">Start the camera, then use your index finger to trace the target.</p>
+            <p id="feedbackDetail">Start the camera, pinch to arm the pen, then trace the target.</p>
           </div>
 
           <div class="shape-key" aria-label="Shape challenge order">

@@ -1,5 +1,6 @@
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm";
-import { isDrawingGesture, isPinchReleaseGesture } from "./gestures.js";
+import { updatePinchState } from "./gestures.js";
+import { VectorOneEuroFilter } from "./one-euro-filter.js";
 import { recognizeStroke } from "./recognizer.js";
 
 const MODEL_URL =
@@ -15,17 +16,16 @@ const SHAPE_LABELS = {
 
 const PHASE = Object.freeze({
   IDLE: "idle",
-  ARMING: "arming",
+  READY: "ready",
+  PINCH_STARTING: "pinch-starting",
   DRAWING: "drawing",
   PAUSED: "paused",
-  ENDING: "ending",
+  PINCH_ENDING: "pinch-ending",
   SUBMITTED: "submitted",
-  READY: "ready",
 });
 
-const GESTURE_DOWN_DEBOUNCE_MS = 90;
-const GESTURE_UP_DEBOUNCE_MS = 120;
 const TRACKING_LOSS_GRACE_MS = 220;
+const PINCH_TOGGLE_DEBOUNCE_MS = 130;
 const POST_SUBMIT_RELEASE_MS = 180;
 const BRIDGE_MAX_GAP_MS = 180;
 const BRIDGE_STEP_DISTANCE = 18;
@@ -39,6 +39,7 @@ const elements = {
   stageMessage: document.querySelector("#stageMessage"),
   status: document.querySelector("#status"),
   startButton: document.querySelector("#startButton"),
+  finishButton: document.querySelector("#finishButton"),
   resetButton: document.querySelector("#resetButton"),
   challengeTitle: document.querySelector("#challengeTitle"),
   targetPreview: document.querySelector("#targetPreview"),
@@ -58,13 +59,12 @@ const state = {
   animationFrame: null,
   lastVideoTime: -1,
   stroke: [],
-  pendingStroke: [],
   cursor: null,
-  armingSince: null,
   pauseSince: null,
-  endingSince: null,
   submittedSince: null,
   cooldownUntil: 0,
+  pinchActive: false,
+  pointFilter: new VectorOneEuroFilter({ minCutoff: 1.1, beta: 0.08 }),
   targetIndex: 0,
   score: 0,
   complete: false,
@@ -86,6 +86,17 @@ function setFeedback(title, detail, tone = "neutral") {
   elements.feedbackPanel?.setAttribute("data-tone", tone);
 }
 
+function updateFinishButton() {
+  if (!elements.finishButton) {
+    return;
+  }
+
+  const canFinish =
+    state.stroke.length >= MIN_STROKE_POINTS &&
+    [PHASE.DRAWING, PHASE.PAUSED, PHASE.PINCH_ENDING].includes(state.phase);
+  elements.finishButton.disabled = !canFinish;
+}
+
 function detectedShapeLabel(result) {
   if (result.shape === "line" && result.orientation) {
     return `${result.orientation} line`;
@@ -101,6 +112,7 @@ function setPhase(phase, timestamp, statusMessage, tone = "neutral") {
   if (statusMessage) {
     setStatus(statusMessage, tone);
   }
+  updateFinishButton();
 }
 
 function canvasSample(point, timestamp) {
@@ -143,56 +155,52 @@ function appendSample(buffer, point, timestamp, allowBridge = true) {
 function transitionToReady(timestamp, statusMessage = "Trace the target", tone = "neutral") {
   state.submittedSince = null;
   state.cooldownUntil = 0;
-  state.pendingStroke = [];
   state.pauseSince = null;
-  state.endingSince = null;
-  state.armingSince = null;
   setPhase(PHASE.READY, timestamp, statusMessage, tone);
 }
 
 function transitionToIdle(timestamp, statusMessage = "Camera is off") {
   state.submittedSince = null;
   state.cooldownUntil = 0;
-  state.pendingStroke = [];
   state.pauseSince = null;
-  state.endingSince = null;
-  state.armingSince = null;
   setPhase(PHASE.IDLE, timestamp, statusMessage, "neutral");
 }
 
-function transitionToArming(timestamp, point) {
-  state.pendingStroke = [];
-  appendSample(state.pendingStroke, point, timestamp, false);
-  setPhase(PHASE.ARMING, timestamp, "Confirming pen down...", "active");
+function transitionToPinchStarting(timestamp) {
+  setPhase(PHASE.PINCH_STARTING, timestamp, "Hold pinch to arm the pen...", "active");
 }
 
-function transitionToDrawing(timestamp) {
-  state.armingSince = null;
+function beginStroke(timestamp) {
+  state.stroke = [];
+  state.pointFilter.reset();
   state.pauseSince = null;
-  state.endingSince = null;
-  if (!state.stroke.length && state.pendingStroke.length) {
-    state.stroke = state.pendingStroke.map((sample) => ({ ...sample }));
-  }
-  state.pendingStroke = [];
-  setPhase(PHASE.DRAWING, timestamp, "Drawing...", "active");
+  setPhase(PHASE.DRAWING, timestamp, "Pen armed — move your index finger to draw.", "active");
+}
+
+function resumeDrawing(timestamp, statusMessage = "Drawing...") {
+  state.pauseSince = null;
+  state.pointFilter.reset();
+  setPhase(PHASE.DRAWING, timestamp, statusMessage, "active");
 }
 
 function transitionToPaused(timestamp) {
   state.pauseSince = timestamp;
-  setPhase(PHASE.PAUSED, timestamp, "Tracking briefly lost", "neutral");
+  setPhase(PHASE.PAUSED, timestamp, "Tracking lost — show your hand or use Finish stroke.", "neutral");
 }
 
-function transitionToEnding(timestamp, statusMessage = "Finishing stroke...") {
-  if (state.phase !== PHASE.ENDING) {
-    state.endingSince = timestamp;
-  }
-  setPhase(PHASE.ENDING, timestamp, statusMessage, "neutral");
+function transitionToPinchEnding(timestamp) {
+  setPhase(PHASE.PINCH_ENDING, timestamp, "Hold pinch to finish...", "active");
 }
 
 function transitionToSubmitted(timestamp, tone = "success") {
   state.submittedSince = timestamp;
   state.cooldownUntil = timestamp + POST_SUBMIT_RELEASE_MS;
-  setPhase(PHASE.SUBMITTED, timestamp, "Stroke submitted", tone);
+  setPhase(
+    PHASE.SUBMITTED,
+    timestamp,
+    state.pinchActive ? "Stroke submitted — release pinch." : "Stroke submitted",
+    tone,
+  );
 }
 
 function updateChallenge() {
@@ -274,10 +282,8 @@ function redraw(cursor = null) {
 
 function clearStroke() {
   state.stroke = [];
-  state.pendingStroke = [];
-  state.armingSince = null;
   state.pauseSince = null;
-  state.endingSince = null;
+  state.pointFilter.reset();
   redraw();
 }
 
@@ -286,31 +292,14 @@ function appendPoint(point, timestamp) {
   redraw(point);
 }
 
-function appendPendingPoint(point, timestamp) {
-  appendSample(state.pendingStroke, point, timestamp, false);
-}
-
-function maybeStartStroke(point, timestamp) {
-  if (state.phase === PHASE.ARMING && timestamp - state.armingSince >= GESTURE_DOWN_DEBOUNCE_MS) {
-    transitionToDrawing(timestamp);
-    if (!state.stroke.length) {
-      appendPoint(point, timestamp);
-    } else {
-      redraw(point);
-    }
-    return true;
-  }
-  return false;
-}
-
 function resetStrokeLifecycle() {
   state.stroke = [];
-  state.pendingStroke = [];
-  state.armingSince = null;
   state.pauseSince = null;
-  state.endingSince = null;
   state.submittedSince = null;
   state.cooldownUntil = 0;
+  state.pinchActive = false;
+  state.pointFilter.reset();
+  updateFinishButton();
 }
 
 function submitStroke(timestamp) {
@@ -343,7 +332,7 @@ function submitStroke(timestamp) {
   } else {
     setFeedback(
       "Shape not clear yet",
-      "Try a larger, slower stroke and keep your index finger extended.",
+      "Try a larger stroke, keep your fingertip visible, and pinch only when you are finished.",
       "warning",
     );
   }
@@ -352,8 +341,10 @@ function submitStroke(timestamp) {
   transitionToSubmitted(timestamp, result.shape === requested ? "success" : "warning");
 }
 
-function handleLandmarks(landmarks, timestamp) {
-  const fingertip = canvasSample(canvasPoint(landmarks[8]), timestamp);
+function handleLandmarks(landmarks, worldLandmarks, timestamp) {
+  const rawPoint = canvasPoint(landmarks[8]);
+  const filteredPoint = state.pointFilter.filter(rawPoint, timestamp);
+  const fingertip = canvasSample(filteredPoint, timestamp);
   state.cursor = fingertip;
 
   if (state.complete) {
@@ -361,84 +352,74 @@ function handleLandmarks(landmarks, timestamp) {
     return;
   }
 
-  const drawing = isDrawingGesture(landmarks);
-  const pinchRelease = isPinchReleaseGesture(landmarks);
+  const pinchLandmarks = worldLandmarks ?? landmarks;
+  state.pinchActive = updatePinchState(state.pinchActive, pinchLandmarks);
 
   if (state.phase === PHASE.SUBMITTED) {
-    if (!drawing && timestamp >= state.cooldownUntil) {
-      transitionToReady(timestamp);
+    if (!state.pinchActive && timestamp >= state.cooldownUntil) {
+      transitionToReady(timestamp, "Pinch to arm the pen");
     }
     redraw(fingertip);
     return;
   }
 
-  if (state.phase === PHASE.ENDING) {
-    if (pinchRelease) {
-      if (timestamp - state.phaseSince >= GESTURE_UP_DEBOUNCE_MS) {
-        submitStroke(timestamp);
+  if (state.phase === PHASE.PINCH_STARTING) {
+    if (!state.pinchActive) {
+      if (timestamp - state.phaseSince >= PINCH_TOGGLE_DEBOUNCE_MS) {
+        beginStroke(timestamp);
       } else {
-        redraw(fingertip);
+        transitionToReady(timestamp, "Pinch was too brief — try again");
       }
-    } else if (drawing) {
-      transitionToDrawing(timestamp);
-      appendPoint(fingertip, timestamp);
-    } else if (timestamp - state.phaseSince >= GESTURE_UP_DEBOUNCE_MS) {
-      submitStroke(timestamp);
-    } else {
-      redraw(fingertip);
+    } else if (timestamp - state.phaseSince >= PINCH_TOGGLE_DEBOUNCE_MS) {
+      setStatus("Release pinch to begin drawing.", "active");
     }
+    redraw(fingertip);
+    return;
+  }
+
+  if (state.phase === PHASE.PINCH_ENDING) {
+    if (!state.pinchActive) {
+      resumeDrawing(timestamp);
+    } else if (timestamp - state.phaseSince >= PINCH_TOGGLE_DEBOUNCE_MS) {
+      submitStroke(timestamp);
+    }
+    redraw(fingertip);
     return;
   }
 
   if (state.phase === PHASE.PAUSED) {
-    if (pinchRelease) {
-      transitionToEnding(timestamp, "Release gesture detected...");
-    } else if (drawing && timestamp - state.pauseSince <= TRACKING_LOSS_GRACE_MS) {
-      transitionToDrawing(timestamp);
+    if (state.pinchActive) {
+      transitionToPinchEnding(timestamp);
+    } else {
+      const resumedQuickly = timestamp - state.pauseSince <= TRACKING_LOSS_GRACE_MS;
+      resumeDrawing(timestamp);
       appendPoint(fingertip, timestamp);
-    } else if (timestamp - state.pauseSince > TRACKING_LOSS_GRACE_MS) {
-      transitionToEnding(timestamp, "Finishing stroke...");
+      if (!resumedQuickly) {
+        setStatus("Drawing resumed after tracking recovered.", "active");
+      }
     }
     redraw(fingertip);
     return;
   }
 
   if (state.phase === PHASE.DRAWING) {
-    if (pinchRelease) {
-      transitionToEnding(timestamp, "Release gesture detected...");
+    if (state.pinchActive) {
+      transitionToPinchEnding(timestamp);
       redraw(fingertip);
-    } else if (drawing) {
-      appendPoint(fingertip, timestamp);
     } else {
-      transitionToEnding(timestamp);
-      redraw(fingertip);
+      appendPoint(fingertip, timestamp);
     }
     return;
   }
 
-  if (state.phase === PHASE.ARMING) {
-    if (!drawing || pinchRelease) {
-      clearStroke();
-      transitionToReady(timestamp);
-      redraw(fingertip);
-      return;
-    }
-
-    appendPendingPoint(fingertip, timestamp);
-    if (maybeStartStroke(fingertip, timestamp)) {
-      return;
+  if (state.phase === PHASE.READY) {
+    if (state.pinchActive) {
+      transitionToPinchStarting(timestamp);
     }
     redraw(fingertip);
     return;
   }
 
-  if (drawing) {
-    transitionToArming(timestamp, fingertip);
-    redraw(fingertip);
-    return;
-  }
-
-  transitionToReady(timestamp);
   redraw(fingertip);
 }
 
@@ -450,17 +431,12 @@ function handleTrackingLoss(timestamp) {
     return;
   }
 
-  if (state.phase === PHASE.DRAWING) {
+  if (state.phase === PHASE.DRAWING || state.phase === PHASE.PINCH_ENDING) {
     transitionToPaused(timestamp);
-  } else if (state.phase === PHASE.ARMING) {
-    clearStroke();
-    transitionToReady(timestamp);
-  } else if (state.phase === PHASE.PAUSED && timestamp - state.pauseSince > TRACKING_LOSS_GRACE_MS) {
-    transitionToEnding(timestamp);
-  } else if (state.phase === PHASE.ENDING && timestamp - state.phaseSince >= GESTURE_UP_DEBOUNCE_MS) {
-    submitStroke(timestamp);
-  } else if (state.phase === PHASE.SUBMITTED && timestamp >= state.cooldownUntil) {
-    transitionToReady(timestamp);
+  } else if (state.phase === PHASE.PINCH_STARTING) {
+    transitionToReady(timestamp, "Tracking lost before the pen was armed");
+  } else if (state.phase === PHASE.SUBMITTED && timestamp >= state.cooldownUntil && !state.pinchActive) {
+    transitionToReady(timestamp, "Pinch to arm the pen");
   }
 
   redraw();
@@ -478,7 +454,7 @@ function processFrame() {
     const result = state.handLandmarker.detectForVideo(elements.video, frameTime);
     const landmarks = result.landmarks?.[0];
     if (landmarks) {
-      handleLandmarks(landmarks, frameTime);
+      handleLandmarks(landmarks, result.worldLandmarks?.[0] ?? null, frameTime);
     } else {
       handleTrackingLoss(frameTime);
     }
@@ -496,6 +472,12 @@ async function createHandLandmarker() {
     runningMode: "VIDEO",
     numHands: 1,
   });
+}
+
+function finishStroke() {
+  if ([PHASE.DRAWING, PHASE.PAUSED, PHASE.PINCH_ENDING].includes(state.phase)) {
+    submitStroke(performance.now());
+  }
 }
 
 async function startCamera() {
@@ -523,8 +505,12 @@ async function startCamera() {
     await elements.video.play();
     resizeCanvas();
     state.handLandmarker = await createHandLandmarker();
-    transitionToReady(performance.now(), "Camera ready", "success");
-    setFeedback("Trace the target", `Draw a ${SHAPE_LABELS[currentShape()]} with your index finger.`, "neutral");
+    transitionToReady(performance.now(), "Camera ready — pinch to arm the pen", "success");
+    setFeedback(
+      "Pinch to start",
+      `Pinch once, release, then draw a ${SHAPE_LABELS[currentShape()]} with your index fingertip.`,
+      "neutral",
+    );
     state.animationFrame = requestAnimationFrame(processFrame);
     elements.startButton.textContent = "Camera ready";
   } catch (error) {
@@ -548,6 +534,7 @@ function stopCamera() {
   elements.video.srcObject = null;
   state.handLandmarker?.close();
   state.handLandmarker = null;
+  state.lastVideoTime = -1;
   resetStrokeLifecycle();
   transitionToIdle(performance.now());
   redraw();
@@ -560,7 +547,7 @@ function resetGame() {
   resetStrokeLifecycle();
   clearStroke();
   updateChallenge();
-  setFeedback("Ready when you are", "Start the camera, then use your index finger to trace the target.");
+  setFeedback("Ready when you are", "Start the camera, pinch to arm the pen, then trace the target.");
   if (state.stream) {
     transitionToReady(performance.now(), "Camera ready", "success");
   } else {
@@ -569,6 +556,7 @@ function resetGame() {
 }
 
 elements.startButton.addEventListener("click", startCamera);
+elements.finishButton?.addEventListener("click", finishStroke);
 elements.resetButton.addEventListener("click", resetGame);
 window.addEventListener("resize", resizeCanvas);
 

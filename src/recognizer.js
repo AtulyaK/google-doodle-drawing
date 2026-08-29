@@ -327,6 +327,9 @@ function vConfidence(points, box) {
   const cornerStrength = turnStrength(points[corner.index - 1], middle, points[corner.index + 1]);
   const openness = directDistance / totalLength;
   const cornerPosition = corner.index / (points.length - 1);
+  const legRise =
+    Math.min(Math.abs(middle.y - start.y), Math.abs(middle.y - end.y)) /
+    Math.max(box.height, 1);
 
   if (
     cornerStrength < 0.8 ||
@@ -334,7 +337,8 @@ function vConfidence(points, box) {
     openness < 0.4 ||
     openness > 0.9 ||
     cornerPosition < 0.25 ||
-    cornerPosition > 0.75
+    cornerPosition > 0.75 ||
+    legRise < 0.2
   ) {
     return 0;
   }
@@ -343,7 +347,8 @@ function vConfidence(points, box) {
     (cornerStrength / Math.PI) * 0.45 +
       legBalance * 0.25 +
       (1 - Math.abs(openness - 0.6) / 0.3) * 0.2 +
-      (1 - Math.abs(cornerPosition - 0.5) / 0.25) * 0.1,
+      (1 - Math.abs(cornerPosition - 0.5) / 0.25) * 0.1 +
+      Math.min(1, legRise) * 0.12,
     0,
     1,
   );
@@ -375,7 +380,7 @@ function circleConfidence(points, box) {
   const circularity = (4 * Math.PI * area) / Math.max(pathLength(resampled) ** 2, 1);
   const corners = detectCorners(resampled, true, 0.5);
 
-  if (corners.length > 1 || radialConsistency < 0.8 || circularity < 0.68) {
+  if (corners.length > 3 || radialConsistency < 0.8 || circularity < 0.68) {
     return 0;
   }
 
