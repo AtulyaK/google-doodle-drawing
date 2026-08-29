@@ -20,11 +20,11 @@ The first load downloads the MediaPipe hand-landmark runtime and model from thei
 
 1. Select **Start camera** and grant camera permission.
 2. Hold one hand in view with the index finger extended and the other fingers curled.
-3. Trace the requested shape in the air.
-4. Lower your index finger briefly to submit the stroke.
+3. Trace the requested shape in the air while keeping the index finger extended.
+4. Lower your index finger briefly to release and submit the stroke.
 5. Complete the line, circle, and triangle challenges.
 
-The first prototype recognizes shapes with deterministic geometry heuristics. Very small, incomplete, or ambiguous strokes are rejected so the game can ask for a retry.
+The first prototype recognizes a small set of primitive strokes with deterministic geometry heuristics: open strokes map to horizontal, vertical, or diagonal lines; open two-leg strokes can map to a V; and closed loops are classified as circle or triangle. Very small, incomplete, or ambiguous strokes are rejected so the game can ask for a retry. Brief hand-tracking loss while drawing is tolerated before the stroke is submitted.
 
 ## Browser support
 

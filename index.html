@@ -14,7 +14,8 @@
           <p class="eyebrow">Camera-powered drawing practice</p>
           <h1>Doodle Motion</h1>
           <p class="hero-copy">
-            Point your index finger at the camera and draw the requested shape in the air.
+            Hold your index finger up to draw, then briefly lower it to release and submit.
+            Short tracking dropouts while you are still drawing are okay.
           </p>
         </div>
         <div class="hero-badge" aria-label="On-device processing">
@@ -48,7 +49,8 @@
 
           <div class="gesture-hint">
             <span class="hint-icon" aria-hidden="true">☝</span>
-            Extend your index finger to draw. Lower it briefly to submit your shape.
+            Keep your index finger extended to draw. Lower it briefly to release and submit.
+            The tracker allows a short pause if your hand slips out of view.
           </div>
         </div>
 
@@ -62,7 +64,32 @@
           </div>
 
           <div id="targetPreview" class="target-preview target-line" aria-label="Target shape: line">
-            <span></span>
+            <svg
+              class="target-artwork target-artwork-line"
+              viewBox="0 0 240 160"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <line x1="38" y1="80" x2="202" y2="80"></line>
+              <circle cx="38" cy="80" r="8"></circle>
+              <circle cx="202" cy="80" r="8"></circle>
+            </svg>
+            <svg
+              class="target-artwork target-artwork-circle"
+              viewBox="0 0 240 160"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <circle cx="120" cy="80" r="54"></circle>
+            </svg>
+            <svg
+              class="target-artwork target-artwork-triangle"
+              viewBox="0 0 240 160"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M120 34 184 126H56Z"></path>
+            </svg>
           </div>
 
           <div class="feedback-panel" aria-live="polite">

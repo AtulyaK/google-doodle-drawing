@@ -7,9 +7,29 @@ const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/was
 const SHAPES = ["line", "circle", "triangle"];
 const SHAPE_LABELS = {
   line: "line",
+  v: "V",
   circle: "circle",
   triangle: "triangle",
 };
+
+const PHASE = Object.freeze({
+  IDLE: "idle",
+  ARMING: "arming",
+  DRAWING: "drawing",
+  PAUSED: "paused",
+  ENDING: "ending",
+  SUBMITTED: "submitted",
+  READY: "ready",
+});
+
+const GESTURE_DOWN_DEBOUNCE_MS = 90;
+const GESTURE_UP_DEBOUNCE_MS = 120;
+const TRACKING_LOSS_GRACE_MS = 220;
+const POST_SUBMIT_RELEASE_MS = 180;
+const BRIDGE_MAX_GAP_MS = 180;
+const BRIDGE_STEP_DISTANCE = 18;
+const MAX_BRIDGE_STEPS = 4;
+const MIN_STROKE_POINTS = 8;
 
 const elements = {
   stage: document.querySelector("#stage"),
@@ -30,13 +50,20 @@ const elements = {
 
 const context = elements.canvas.getContext("2d");
 const state = {
+  phase: PHASE.IDLE,
+  phaseSince: 0,
   stream: null,
   handLandmarker: null,
   animationFrame: null,
   lastVideoTime: -1,
-  drawing: false,
-  lostFrames: 0,
   stroke: [],
+  pendingStroke: [],
+  cursor: null,
+  armingSince: null,
+  pauseSince: null,
+  endingSince: null,
+  submittedSince: null,
+  cooldownUntil: 0,
   targetIndex: 0,
   score: 0,
   complete: false,
@@ -56,6 +83,115 @@ function setFeedback(title, detail, tone = "neutral") {
   elements.feedbackTitle.textContent = title;
   elements.feedbackDetail.textContent = detail;
   elements.feedbackPanel?.setAttribute("data-tone", tone);
+}
+
+function detectedShapeLabel(result) {
+  if (result.shape === "line" && result.orientation) {
+    return `${result.orientation} line`;
+  }
+  return SHAPE_LABELS[result.shape] ?? result.shape;
+}
+
+function setPhase(phase, timestamp, statusMessage, tone = "neutral") {
+  if (state.phase !== phase) {
+    state.phase = phase;
+    state.phaseSince = timestamp;
+  }
+  if (statusMessage) {
+    setStatus(statusMessage, tone);
+  }
+}
+
+function canvasSample(point, timestamp) {
+  return { x: point.x, y: point.y, t: timestamp };
+}
+
+function appendSample(buffer, point, timestamp, allowBridge = true) {
+  const sample = canvasSample(point, timestamp);
+  const previous = buffer[buffer.length - 1];
+
+  if (!previous) {
+    buffer.push(sample);
+    return;
+  }
+
+  const gapMs = Math.max(0, sample.t - previous.t);
+  const gapPx = Math.hypot(sample.x - previous.x, sample.y - previous.y);
+
+  if (allowBridge && gapMs <= BRIDGE_MAX_GAP_MS && gapPx >= BRIDGE_STEP_DISTANCE) {
+    const bridgeSteps = Math.min(
+      MAX_BRIDGE_STEPS,
+      Math.max(2, Math.ceil(gapPx / BRIDGE_STEP_DISTANCE)),
+    );
+
+    for (let step = 1; step < bridgeSteps; step += 1) {
+      const ratio = step / bridgeSteps;
+      buffer.push({
+        x: previous.x + (sample.x - previous.x) * ratio,
+        y: previous.y + (sample.y - previous.y) * ratio,
+        t: previous.t + gapMs * ratio,
+      });
+    }
+  }
+
+  if (gapPx > 0.5 || gapMs > 0) {
+    buffer.push(sample);
+  }
+}
+
+function transitionToReady(timestamp, statusMessage = "Trace the target", tone = "neutral") {
+  state.submittedSince = null;
+  state.cooldownUntil = 0;
+  state.pendingStroke = [];
+  state.pauseSince = null;
+  state.endingSince = null;
+  state.armingSince = null;
+  setPhase(PHASE.READY, timestamp, statusMessage, tone);
+}
+
+function transitionToIdle(timestamp, statusMessage = "Camera is off") {
+  state.submittedSince = null;
+  state.cooldownUntil = 0;
+  state.pendingStroke = [];
+  state.pauseSince = null;
+  state.endingSince = null;
+  state.armingSince = null;
+  setPhase(PHASE.IDLE, timestamp, statusMessage, "neutral");
+}
+
+function transitionToArming(timestamp, point) {
+  state.pendingStroke = [];
+  appendSample(state.pendingStroke, point, timestamp, false);
+  setPhase(PHASE.ARMING, timestamp, "Confirming pen down...", "active");
+}
+
+function transitionToDrawing(timestamp) {
+  state.armingSince = null;
+  state.pauseSince = null;
+  state.endingSince = null;
+  if (!state.stroke.length && state.pendingStroke.length) {
+    state.stroke = state.pendingStroke.map((sample) => ({ ...sample }));
+  }
+  state.pendingStroke = [];
+  setPhase(PHASE.DRAWING, timestamp, "Drawing...", "active");
+}
+
+function transitionToPaused(timestamp) {
+  state.pauseSince = timestamp;
+  setPhase(PHASE.PAUSED, timestamp, "Tracking briefly lost", "neutral");
+}
+
+function transitionToEnding(timestamp, statusMessage = "Finishing stroke...") {
+  if (state.phase !== PHASE.ENDING) {
+    state.endingSince = timestamp;
+  }
+  setPhase(PHASE.ENDING, timestamp, statusMessage, "neutral");
+}
+
+function transitionToSubmitted(timestamp, tone = "success") {
+  state.submittedSince = timestamp;
+  state.cooldownUntil = timestamp + POST_SUBMIT_RELEASE_MS;
+  setPhase(PHASE.SUBMITTED, timestamp, "Stroke submitted", tone);
 }
 
 function updateChallenge() {
@@ -137,8 +273,10 @@ function redraw(cursor = null) {
 
 function clearStroke() {
   state.stroke = [];
-  state.drawing = false;
-  state.lostFrames = 0;
+  state.pendingStroke = [];
+  state.armingSince = null;
+  state.pauseSince = null;
+  state.endingSince = null;
   redraw();
 }
 
@@ -150,24 +288,47 @@ function isDrawingGesture(landmarks) {
   return indexExtended && middleCurled && ringCurled && pinkyCurled;
 }
 
-function appendPoint(point) {
-  const last = state.stroke[state.stroke.length - 1];
-  if (!last || Math.hypot(point.x - last.x, point.y - last.y) > 2) {
-    state.stroke.push(point);
-    redraw(point);
-  } else {
-    redraw(last);
-  }
+function appendPoint(point, timestamp) {
+  appendSample(state.stroke, point, timestamp, true);
+  redraw(point);
 }
 
-function submitStroke() {
-  if (state.stroke.length < 8) {
-    clearStroke();
-    return;
+function appendPendingPoint(point, timestamp) {
+  appendSample(state.pendingStroke, point, timestamp, false);
+}
+
+function maybeStartStroke(point, timestamp) {
+  if (state.phase === PHASE.ARMING && timestamp - state.armingSince >= GESTURE_DOWN_DEBOUNCE_MS) {
+    transitionToDrawing(timestamp);
+    if (!state.stroke.length) {
+      appendPoint(point, timestamp);
+    } else {
+      redraw(point);
+    }
+    return true;
+  }
+  return false;
+}
+
+function resetStrokeLifecycle() {
+  state.stroke = [];
+  state.pendingStroke = [];
+  state.armingSince = null;
+  state.pauseSince = null;
+  state.endingSince = null;
+  state.submittedSince = null;
+  state.cooldownUntil = 0;
+}
+
+function submitStroke(timestamp) {
+  const rawStroke = state.stroke.map((point) => ({ x: point.x, y: point.y }));
+  const requested = currentShape();
+  let result = { shape: null, confidence: 0 };
+
+  if (rawStroke.length >= MIN_STROKE_POINTS) {
+    result = recognizeStroke(rawStroke);
   }
 
-  const result = recognizeStroke(state.stroke);
-  const requested = currentShape();
   if (result.shape === requested) {
     state.score += 1;
     state.complete = state.targetIndex === SHAPES.length - 1;
@@ -183,47 +344,121 @@ function submitStroke() {
   } else if (result.shape) {
     setFeedback(
       "Almost there",
-      `I saw a ${SHAPE_LABELS[result.shape]}. Try tracing the ${SHAPE_LABELS[requested]} again.`,
+      `I saw a ${detectedShapeLabel(result)}. Try tracing the ${SHAPE_LABELS[requested]} again.`,
       "warning",
     );
   } else {
-    setFeedback("Shape not clear yet", "Try a larger, slower stroke and keep your index finger extended.", "warning");
+    setFeedback(
+      "Shape not clear yet",
+      "Try a larger, slower stroke and keep your index finger extended.",
+      "warning",
+    );
   }
+
   clearStroke();
+  transitionToSubmitted(timestamp, result.shape === requested ? "success" : "warning");
 }
 
-function handleLandmarks(landmarks) {
-  const fingertip = canvasPoint(landmarks[8]);
+function handleLandmarks(landmarks, timestamp) {
+  const fingertip = canvasSample(canvasPoint(landmarks[8]), timestamp);
+  state.cursor = fingertip;
+
   if (state.complete) {
     redraw(fingertip);
     return;
   }
+
   const drawing = isDrawingGesture(landmarks);
-  state.lostFrames = 0;
+
+  if (state.phase === PHASE.SUBMITTED) {
+    if (!drawing && timestamp >= state.cooldownUntil) {
+      transitionToReady(timestamp);
+    }
+    redraw(fingertip);
+    return;
+  }
+
+  if (state.phase === PHASE.ENDING) {
+    if (drawing) {
+      transitionToDrawing(timestamp);
+      appendPoint(fingertip, timestamp);
+    } else if (timestamp - state.phaseSince >= GESTURE_UP_DEBOUNCE_MS) {
+      submitStroke(timestamp);
+    } else {
+      redraw(fingertip);
+    }
+    return;
+  }
+
+  if (state.phase === PHASE.PAUSED) {
+    if (drawing && timestamp - state.pauseSince <= TRACKING_LOSS_GRACE_MS) {
+      transitionToDrawing(timestamp);
+      appendPoint(fingertip, timestamp);
+    } else if (timestamp - state.pauseSince > TRACKING_LOSS_GRACE_MS) {
+      transitionToEnding(timestamp, "Finishing stroke...");
+    }
+    redraw(fingertip);
+    return;
+  }
+
+  if (state.phase === PHASE.DRAWING) {
+    if (drawing) {
+      appendPoint(fingertip, timestamp);
+    } else {
+      transitionToEnding(timestamp);
+      redraw(fingertip);
+    }
+    return;
+  }
+
+  if (state.phase === PHASE.ARMING) {
+    if (!drawing) {
+      clearStroke();
+      transitionToReady(timestamp);
+      redraw(fingertip);
+      return;
+    }
+
+    appendPendingPoint(fingertip, timestamp);
+    if (maybeStartStroke(fingertip, timestamp)) {
+      return;
+    }
+    redraw(fingertip);
+    return;
+  }
 
   if (drawing) {
-    if (!state.drawing) {
-      state.stroke = [];
-      state.drawing = true;
-      setStatus("Drawing...", "active");
-    }
-    appendPoint(fingertip);
-  } else if (state.drawing) {
-    state.drawing = false;
-    setStatus("Shape captured", "neutral");
-    submitStroke();
-  } else {
+    transitionToArming(timestamp, fingertip);
     redraw(fingertip);
+    return;
   }
+
+  transitionToReady(timestamp);
+  redraw(fingertip);
 }
 
-function handleTrackingLoss() {
-  state.lostFrames += 1;
-  redraw();
-  if (state.drawing && state.lostFrames > 5) {
-    state.drawing = false;
-    submitStroke();
+function handleTrackingLoss(timestamp) {
+  state.cursor = null;
+
+  if (state.complete) {
+    redraw();
+    return;
   }
+
+  if (state.phase === PHASE.DRAWING) {
+    transitionToPaused(timestamp);
+  } else if (state.phase === PHASE.ARMING) {
+    clearStroke();
+    transitionToReady(timestamp);
+  } else if (state.phase === PHASE.PAUSED && timestamp - state.pauseSince > TRACKING_LOSS_GRACE_MS) {
+    transitionToEnding(timestamp);
+  } else if (state.phase === PHASE.ENDING && timestamp - state.phaseSince >= GESTURE_UP_DEBOUNCE_MS) {
+    submitStroke(timestamp);
+  } else if (state.phase === PHASE.SUBMITTED && timestamp >= state.cooldownUntil) {
+    transitionToReady(timestamp);
+  }
+
+  redraw();
 }
 
 function processFrame() {
@@ -234,12 +469,13 @@ function processFrame() {
 
   if (elements.video.currentTime !== state.lastVideoTime) {
     state.lastVideoTime = elements.video.currentTime;
-    const result = state.handLandmarker.detectForVideo(elements.video, performance.now());
+    const frameTime = performance.now();
+    const result = state.handLandmarker.detectForVideo(elements.video, frameTime);
     const landmarks = result.landmarks?.[0];
     if (landmarks) {
-      handleLandmarks(landmarks);
+      handleLandmarks(landmarks, frameTime);
     } else {
-      handleTrackingLoss();
+      handleTrackingLoss(frameTime);
     }
   }
   state.animationFrame = requestAnimationFrame(processFrame);
@@ -282,7 +518,7 @@ async function startCamera() {
     await elements.video.play();
     resizeCanvas();
     state.handLandmarker = await createHandLandmarker();
-    setStatus("Camera ready", "success");
+    transitionToReady(performance.now(), "Camera ready", "success");
     setFeedback("Trace the target", `Draw a ${SHAPE_LABELS[currentShape()]} with your index finger.`, "neutral");
     state.animationFrame = requestAnimationFrame(processFrame);
     elements.startButton.textContent = "Camera ready";
@@ -307,16 +543,24 @@ function stopCamera() {
   elements.video.srcObject = null;
   state.handLandmarker?.close();
   state.handLandmarker = null;
+  resetStrokeLifecycle();
+  transitionToIdle(performance.now());
+  redraw();
 }
 
 function resetGame() {
   state.targetIndex = 0;
   state.score = 0;
   state.complete = false;
+  resetStrokeLifecycle();
   clearStroke();
   updateChallenge();
   setFeedback("Ready when you are", "Start the camera, then use your index finger to trace the target.");
-  setStatus(state.stream ? "Camera ready" : "Camera is off");
+  if (state.stream) {
+    transitionToReady(performance.now(), "Camera ready", "success");
+  } else {
+    transitionToIdle(performance.now());
+  }
 }
 
 elements.startButton.addEventListener("click", startCamera);

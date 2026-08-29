@@ -17,26 +17,104 @@
 
       const results = document.querySelector("#results");
       const tests = [];
-      const add = (name, points, expected) => {
+      const add = (name, points, expected, expectedOrientation = null) => {
         const result = recognizeStroke(points);
-        const passed = result.shape === expected;
+        const passed =
+          result.shape === expected &&
+          (expectedOrientation === null || result.orientation === expectedOrientation);
         tests.push({ name, passed, result });
       };
-      const line = Array.from({ length: 24 }, (_, index) => ({ x: index * 8, y: index * 2 }));
-      const circle = Array.from({ length: 40 }, (_, index) => {
-        const angle = (Math.PI * 2 * index) / 39;
-        return { x: 100 + Math.cos(angle) * 70, y: 100 + Math.sin(angle) * 70 };
-      });
-      const triangle = [
-        ...Array.from({ length: 12 }, (_, index) => ({ x: 40 + index * 10, y: 180 - index * 12 })),
-        ...Array.from({ length: 12 }, (_, index) => ({ x: 150 - index * 10, y: 36 + index * 12 })),
-        ...Array.from({ length: 12 }, (_, index) => ({ x: 40, y: 36 + index * 12 })),
-        { x: 40, y: 180 },
-      ];
 
-      add("line", line, "line");
-      add("circle", circle, "circle");
-      add("triangle", triangle, "triangle");
+      const wave = (index, magnitude) => Math.sin(index * 1.37 + 0.5) * magnitude;
+      const lerp = (start, end, t) => start + (end - start) * t;
+
+      const lineStroke = (start, end, count, wobble = 0) =>
+        Array.from({ length: count }, (_, index) => {
+          const t = index / (count - 1);
+          const x = lerp(start.x, end.x, t);
+          const y = lerp(start.y, end.y, t);
+          const dx = end.y - start.y;
+          const dy = -(end.x - start.x);
+          const length = Math.hypot(dx, dy) || 1;
+          const normalX = dx / length;
+          const normalY = dy / length;
+          const offset = wave(index, wobble);
+          return {
+            x: x + normalX * offset,
+            y: y + normalY * offset,
+          };
+        });
+
+      const polylineStroke = (vertices, countPerSegment, wobble = 0, closeLoop = false) => {
+        const points = [];
+        const segmentCount = closeLoop ? vertices.length : vertices.length - 1;
+        for (let segment = 0; segment < segmentCount; segment += 1) {
+          const start = vertices[segment];
+          const end = vertices[(segment + 1) % vertices.length];
+          const pointsOnSegment = lineStroke(start, end, countPerSegment, wobble);
+          points.push(...(segment === 0 ? pointsOnSegment : pointsOnSegment.slice(1)));
+        }
+        if (closeLoop) {
+          points.push({ ...vertices[0] });
+        }
+        return points;
+      };
+
+      const circleStroke = (center, radius, count, wobble = 0, angleOffset = 0) =>
+        Array.from({ length: count }, (_, index) => {
+          const angle = angleOffset + (Math.PI * 2 * index) / (count - 1);
+          const radial = radius + wave(index, wobble);
+          return {
+            x: center.x + Math.cos(angle) * radial,
+            y: center.y + Math.sin(angle) * radial,
+          };
+        });
+
+      add("horizontal line", lineStroke({ x: 40, y: 88 }, { x: 340, y: 92 }, 13, 2), "line", "horizontal");
+      add("vertical line", lineStroke({ x: 230, y: 40 }, { x: 224, y: 300 }, 13, 2), "line", "vertical");
+      add("diagonal line", lineStroke({ x: 40, y: 48 }, { x: 336, y: 276 }, 11, 3), "line", "diagonal");
+      add("v shape", polylineStroke([{ x: 70, y: 60 }, { x: 170, y: 250 }, { x: 270, y: 60 }], 12, 3), "v");
+      add("imperfect circle", circleStroke({ x: 180, y: 160 }, 78, 40, 4, 0.25), "circle");
+      add(
+        "imperfect triangle",
+        polylineStroke(
+          [
+            { x: 70, y: 250 },
+            { x: 180, y: 60 },
+            { x: 294, y: 246 },
+          ],
+          14,
+          4,
+          true,
+        ),
+        "triangle",
+      );
+      add("short stroke rejected", lineStroke({ x: 40, y: 80 }, { x: 86, y: 86 }, 6, 1), null);
+      add(
+        "open arc rejected",
+        circleStroke({ x: 178, y: 158 }, 76, 24, 2, 0.15).slice(0, 18),
+        null,
+      );
+      add(
+        "l shape rejected",
+        polylineStroke([{ x: 82, y: 52 }, { x: 82, y: 220 }, { x: 226, y: 220 }], 10, 1),
+        null,
+      );
+      add(
+        "scribble rejected",
+        [
+          { x: 50, y: 50 },
+          { x: 92, y: 86 },
+          { x: 62, y: 126 },
+          { x: 122, y: 150 },
+          { x: 88, y: 200 },
+          { x: 160, y: 174 },
+          { x: 140, y: 238 },
+          { x: 208, y: 210 },
+        ],
+        null,
+      );
+
       results.innerHTML = tests
         .map(({ name, passed, result }) => `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name} (${result.shape ?? "rejected"})</p>`)
         .join("");
