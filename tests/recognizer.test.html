@@ -14,19 +14,10 @@
     <div id="results"></div>
     <script type="module">
       import { recognizeStroke } from "../src/recognizer.js";
-      import { PINCH_OFF_RATIO, PINCH_ON_RATIO, pinchRatio, updatePinchState } from "../src/gestures.js";
       import { VectorOneEuroFilter } from "../src/one-euro-filter.js";
 
       const results = document.querySelector("#results");
       const tests = [];
-      const landmarks = (ratio) => {
-        const points = Array.from({ length: 21 }, () => ({ x: 0, y: 0, z: 0 }));
-        points[5] = { x: -0.35, y: 0, z: 0 };
-        points[17] = { x: 0.35, y: 0, z: 0 };
-        points[4] = { x: 0, y: 0.2, z: 0.05 };
-        points[8] = { x: ratio * 0.7, y: 0.2, z: 0.05 };
-        return points;
-      };
       const add = (name, points, expected, expectedOrientation = null) => {
         const result = recognizeStroke(points);
         const passed =
@@ -80,55 +71,6 @@
           };
         });
 
-      const rotateLandmarks = (points, angles) => {
-        const [xAngle, yAngle, zAngle] = angles;
-        const sinX = Math.sin(xAngle);
-        const cosX = Math.cos(xAngle);
-        const sinY = Math.sin(yAngle);
-        const cosY = Math.cos(yAngle);
-        const sinZ = Math.sin(zAngle);
-        const cosZ = Math.cos(zAngle);
-        return points.map((point) => {
-          const y1 = point.y * cosX - point.z * sinX;
-          const z1 = point.y * sinX + point.z * cosX;
-          const x2 = point.x * cosY + z1 * sinY;
-          const z2 = -point.x * sinY + z1 * cosY;
-          return {
-            x: x2 * cosZ - y1 * sinZ,
-            y: x2 * sinZ + y1 * cosZ,
-            z: z2,
-          };
-        });
-      };
-
-      const openHand = landmarks(0.8);
-      const pinchedHand = landmarks(0.2);
-      const tiltedPinchedHand = rotateLandmarks(pinchedHand, [0.8, -0.55, 0.9]);
-      tests.push({
-        name: "open pinch ratio leaves pen unlatched",
-        passed: !updatePinchState(false, openHand),
-        result: { shape: null },
-      });
-      tests.push({
-        name: "stable pinch arms pen",
-        passed: updatePinchState(false, pinchedHand),
-        result: { shape: null },
-      });
-      tests.push({
-        name: "pinch hysteresis keeps pen armed",
-        passed:
-          updatePinchState(true, landmarks((PINCH_ON_RATIO + PINCH_OFF_RATIO) / 2)) &&
-          !updatePinchState(true, landmarks(PINCH_OFF_RATIO)),
-        result: { shape: null },
-      });
-      tests.push({
-        name: "tilted hand keeps normalized pinch detection",
-        passed:
-          Math.abs(pinchRatio(tiltedPinchedHand) - pinchRatio(pinchedHand)) < 0.001 &&
-          updatePinchState(false, tiltedPinchedHand),
-        result: { shape: null },
-      });
-
       const filter = new VectorOneEuroFilter({ minCutoff: 1.2, beta: 0.04 });
       filter.filter({ x: 0, y: 0 }, 0);
       const filteredJump = filter.filter({ x: 100, y: 0 }, 100);
@@ -142,7 +84,7 @@
       const releaseMovement = [{ x: 220, y: 100 }, { x: 190, y: 80 }];
       const submittedStroke = [capturedEndpoint].map(({ x, y }) => ({ x, y }));
       tests.push({
-        name: "pinch release movement stays outside submitted stroke",
+        name: "spacebar release movement stays outside submitted stroke",
         passed:
           submittedStroke.length === 1 &&
           submittedStroke[0].x === capturedEndpoint.x &&

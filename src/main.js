@@ -1,5 +1,4 @@
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm";
-import { updatePinchState } from "./gestures.js";
 import { VectorOneEuroFilter } from "./one-euro-filter.js";
 import { recognizeStroke } from "./recognizer.js";
 
@@ -17,16 +16,12 @@ const SHAPE_LABELS = {
 const PHASE = Object.freeze({
   IDLE: "idle",
   READY: "ready",
-  PINCH_STARTING: "pinch-starting",
   DRAWING: "drawing",
   PAUSED: "paused",
-  PINCH_ENDING: "pinch-ending",
   SUBMITTED: "submitted",
 });
 
 const TRACKING_LOSS_GRACE_MS = 220;
-const PINCH_TOGGLE_DEBOUNCE_MS = 130;
-const POST_SUBMIT_RELEASE_MS = 180;
 const BRIDGE_MAX_GAP_MS = 180;
 const BRIDGE_STEP_DISTANCE = 18;
 const MAX_BRIDGE_STEPS = 4;
@@ -61,9 +56,7 @@ const state = {
   stroke: [],
   cursor: null,
   pauseSince: null,
-  submittedSince: null,
-  cooldownUntil: 0,
-  pinchActive: false,
+  spaceHeld: false,
   pointFilter: new VectorOneEuroFilter({ minCutoff: 1.1, beta: 0.08 }),
   targetIndex: 0,
   score: 0,
@@ -93,7 +86,7 @@ function updateFinishButton() {
 
   const canFinish =
     state.stroke.length >= MIN_STROKE_POINTS &&
-    [PHASE.DRAWING, PHASE.PAUSED, PHASE.PINCH_ENDING].includes(state.phase);
+    [PHASE.DRAWING, PHASE.PAUSED].includes(state.phase);
   elements.finishButton.disabled = !canFinish;
 }
 
@@ -152,29 +145,21 @@ function appendSample(buffer, point, timestamp, allowBridge = true) {
   }
 }
 
-function transitionToReady(timestamp, statusMessage = "Trace the target", tone = "neutral") {
-  state.submittedSince = null;
-  state.cooldownUntil = 0;
+function transitionToReady(timestamp, statusMessage = "Press and hold Space to draw", tone = "neutral") {
   state.pauseSince = null;
   setPhase(PHASE.READY, timestamp, statusMessage, tone);
 }
 
 function transitionToIdle(timestamp, statusMessage = "Camera is off") {
-  state.submittedSince = null;
-  state.cooldownUntil = 0;
   state.pauseSince = null;
   setPhase(PHASE.IDLE, timestamp, statusMessage, "neutral");
-}
-
-function transitionToPinchStarting(timestamp) {
-  setPhase(PHASE.PINCH_STARTING, timestamp, "Hold pinch to arm the pen...", "active");
 }
 
 function beginStroke(timestamp) {
   state.stroke = [];
   state.pointFilter.reset();
   state.pauseSince = null;
-  setPhase(PHASE.DRAWING, timestamp, "Pen armed — move your index finger to draw.", "active");
+  setPhase(PHASE.DRAWING, timestamp, "Space held — move your index finger to draw.", "active");
 }
 
 function resumeDrawing(timestamp, statusMessage = "Drawing...") {
@@ -185,22 +170,11 @@ function resumeDrawing(timestamp, statusMessage = "Drawing...") {
 
 function transitionToPaused(timestamp) {
   state.pauseSince = timestamp;
-  setPhase(PHASE.PAUSED, timestamp, "Tracking lost — show your hand or use Finish stroke.", "neutral");
-}
-
-function transitionToPinchEnding(timestamp) {
-  setPhase(PHASE.PINCH_ENDING, timestamp, "Hold pinch to finish...", "active");
+  setPhase(PHASE.PAUSED, timestamp, "Tracking lost — keep holding Space or use Finish stroke.", "neutral");
 }
 
 function transitionToSubmitted(timestamp, tone = "success") {
-  state.submittedSince = timestamp;
-  state.cooldownUntil = timestamp + POST_SUBMIT_RELEASE_MS;
-  setPhase(
-    PHASE.SUBMITTED,
-    timestamp,
-    state.pinchActive ? "Stroke submitted — release pinch." : "Stroke submitted",
-    tone,
-  );
+  setPhase(PHASE.SUBMITTED, timestamp, "Stroke submitted", tone);
 }
 
 function updateChallenge() {
@@ -295,9 +269,7 @@ function appendPoint(point, timestamp) {
 function resetStrokeLifecycle() {
   state.stroke = [];
   state.pauseSince = null;
-  state.submittedSince = null;
-  state.cooldownUntil = 0;
-  state.pinchActive = false;
+  state.spaceHeld = false;
   state.pointFilter.reset();
   updateFinishButton();
 }
@@ -332,7 +304,7 @@ function submitStroke(timestamp) {
   } else {
     setFeedback(
       "Shape not clear yet",
-      "Try a larger stroke, keep your fingertip visible, and pinch only when you are finished.",
+      "Try a larger stroke, keep your fingertip visible, and release Space only when you are finished.",
       "warning",
     );
   }
@@ -341,7 +313,7 @@ function submitStroke(timestamp) {
   transitionToSubmitted(timestamp, result.shape === requested ? "success" : "warning");
 }
 
-function handleLandmarks(landmarks, worldLandmarks, timestamp) {
+function handleLandmarks(landmarks, timestamp) {
   const rawPoint = canvasPoint(landmarks[8]);
   const filteredPoint = state.pointFilter.filter(rawPoint, timestamp);
   const fingertip = canvasSample(filteredPoint, timestamp);
@@ -352,45 +324,14 @@ function handleLandmarks(landmarks, worldLandmarks, timestamp) {
     return;
   }
 
-  const pinchLandmarks = worldLandmarks ?? landmarks;
-  state.pinchActive = updatePinchState(state.pinchActive, pinchLandmarks);
-
   if (state.phase === PHASE.SUBMITTED) {
-    if (!state.pinchActive && timestamp >= state.cooldownUntil) {
-      transitionToReady(timestamp, "Pinch to arm the pen");
-    }
-    redraw(fingertip);
-    return;
-  }
-
-  if (state.phase === PHASE.PINCH_STARTING) {
-    if (!state.pinchActive) {
-      if (timestamp - state.phaseSince >= PINCH_TOGGLE_DEBOUNCE_MS) {
-        beginStroke(timestamp);
-      } else {
-        transitionToReady(timestamp, "Pinch was too brief — try again");
-      }
-    } else if (timestamp - state.phaseSince >= PINCH_TOGGLE_DEBOUNCE_MS) {
-      setStatus("Release pinch to begin drawing.", "active");
-    }
-    redraw(fingertip);
-    return;
-  }
-
-  if (state.phase === PHASE.PINCH_ENDING) {
-    if (!state.pinchActive) {
-      resumeDrawing(timestamp);
-    } else if (timestamp - state.phaseSince >= PINCH_TOGGLE_DEBOUNCE_MS) {
-      submitStroke(timestamp);
-    }
+    transitionToReady(timestamp);
     redraw(fingertip);
     return;
   }
 
   if (state.phase === PHASE.PAUSED) {
-    if (state.pinchActive) {
-      transitionToPinchEnding(timestamp);
-    } else {
+    if (state.spaceHeld) {
       const resumedQuickly = timestamp - state.pauseSince <= TRACKING_LOSS_GRACE_MS;
       resumeDrawing(timestamp);
       appendPoint(fingertip, timestamp);
@@ -403,20 +344,11 @@ function handleLandmarks(landmarks, worldLandmarks, timestamp) {
   }
 
   if (state.phase === PHASE.DRAWING) {
-    if (state.pinchActive) {
-      transitionToPinchEnding(timestamp);
-      redraw(fingertip);
-    } else {
+    if (state.spaceHeld) {
       appendPoint(fingertip, timestamp);
+    } else {
+      submitStroke(timestamp);
     }
-    return;
-  }
-
-  if (state.phase === PHASE.READY) {
-    if (state.pinchActive) {
-      transitionToPinchStarting(timestamp);
-    }
-    redraw(fingertip);
     return;
   }
 
@@ -431,12 +363,10 @@ function handleTrackingLoss(timestamp) {
     return;
   }
 
-  if (state.phase === PHASE.DRAWING || state.phase === PHASE.PINCH_ENDING) {
+  if (state.phase === PHASE.DRAWING) {
     transitionToPaused(timestamp);
-  } else if (state.phase === PHASE.PINCH_STARTING) {
-    transitionToReady(timestamp, "Tracking lost before the pen was armed");
-  } else if (state.phase === PHASE.SUBMITTED && timestamp >= state.cooldownUntil && !state.pinchActive) {
-    transitionToReady(timestamp, "Pinch to arm the pen");
+  } else if (state.phase === PHASE.SUBMITTED) {
+    transitionToReady(timestamp);
   }
 
   redraw();
@@ -454,7 +384,7 @@ function processFrame() {
     const result = state.handLandmarker.detectForVideo(elements.video, frameTime);
     const landmarks = result.landmarks?.[0];
     if (landmarks) {
-      handleLandmarks(landmarks, result.worldLandmarks?.[0] ?? null, frameTime);
+      handleLandmarks(landmarks, frameTime);
     } else {
       handleTrackingLoss(frameTime);
     }
@@ -475,8 +405,59 @@ async function createHandLandmarker() {
 }
 
 function finishStroke() {
-  if ([PHASE.DRAWING, PHASE.PAUSED, PHASE.PINCH_ENDING].includes(state.phase)) {
+  if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
+    state.spaceHeld = false;
     submitStroke(performance.now());
+  }
+}
+
+function isTextEntryTarget(target) {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+}
+
+function handleSpaceKeyDown(event) {
+  if (event.code !== "Space" || event.repeat || isTextEntryTarget(event.target)) {
+    return;
+  }
+
+  if (state.phase === PHASE.IDLE) {
+    setStatus("Start the camera before drawing.", "neutral");
+    return;
+  }
+
+  event.preventDefault();
+  if (state.complete) {
+    return;
+  }
+  if (state.phase === PHASE.SUBMITTED) {
+    transitionToReady(performance.now());
+  }
+  if (state.phase === PHASE.READY) {
+    state.spaceHeld = true;
+    beginStroke(performance.now());
+  }
+}
+
+function handleSpaceKeyUp(event) {
+  if (event.code !== "Space" || isTextEntryTarget(event.target)) {
+    return;
+  }
+
+  if (state.spaceHeld) {
+    event.preventDefault();
+    state.spaceHeld = false;
+    if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
+      submitStroke(performance.now());
+    }
+  }
+}
+
+function finishSpacebarStroke() {
+  if (state.spaceHeld) {
+    state.spaceHeld = false;
+    if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
+      submitStroke(performance.now());
+    }
   }
 }
 
@@ -505,10 +486,10 @@ async function startCamera() {
     await elements.video.play();
     resizeCanvas();
     state.handLandmarker = await createHandLandmarker();
-    transitionToReady(performance.now(), "Camera ready — pinch to arm the pen", "success");
+    transitionToReady(performance.now(), "Camera ready — hold Space to draw", "success");
     setFeedback(
-      "Pinch to start",
-      `Pinch once, release, then draw a ${SHAPE_LABELS[currentShape()]} with your index fingertip.`,
+      "Hold Space to draw",
+      `Hold Space while tracing a ${SHAPE_LABELS[currentShape()]} with your index fingertip, then release to submit.`,
       "neutral",
     );
     state.animationFrame = requestAnimationFrame(processFrame);
@@ -547,7 +528,7 @@ function resetGame() {
   resetStrokeLifecycle();
   clearStroke();
   updateChallenge();
-  setFeedback("Ready when you are", "Start the camera, pinch to arm the pen, then trace the target.");
+  setFeedback("Ready when you are", "Start the camera, hold Space to draw, then release it to submit.");
   if (state.stream) {
     transitionToReady(performance.now(), "Camera ready", "success");
   } else {
@@ -558,6 +539,9 @@ function resetGame() {
 elements.startButton.addEventListener("click", startCamera);
 elements.finishButton?.addEventListener("click", finishStroke);
 elements.resetButton.addEventListener("click", resetGame);
+window.addEventListener("keydown", handleSpaceKeyDown);
+window.addEventListener("keyup", handleSpaceKeyUp);
+window.addEventListener("blur", finishSpacebarStroke);
 window.addEventListener("resize", resizeCanvas);
 
 updateChallenge();
