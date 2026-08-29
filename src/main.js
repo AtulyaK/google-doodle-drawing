@@ -267,6 +267,10 @@ async function startCamera() {
   elements.stageMessage.classList.add("is-hidden");
 
   try {
+    const localHosts = ["localhost", "127.0.0.1", "[::1]"];
+    if (!window.isSecureContext && !localHosts.includes(window.location.hostname)) {
+      throw new Error("Camera access requires localhost or HTTPS. Open http://localhost:5173 instead of this LAN address.");
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("This browser does not provide camera access.");
     }

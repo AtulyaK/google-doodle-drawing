@@ -12,6 +12,8 @@ python -m http.server 5173
 
 Then open <http://localhost:5173>.
 
+Use `localhost` (or `127.0.0.1`) for camera access. Do not use the LAN IP addresses printed by the server when serving over plain HTTP; browsers block camera access on those origins unless they are configured for HTTPS.
+
 The first load downloads the MediaPipe hand-landmark runtime and model from their public CDNs. After that, camera frames are processed locally in the browser and are not uploaded by this app.
 
 ## How to play
