@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Recognizer checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; }
+    </style>
+  </head>
+  <body>
+    <h1>Recognizer checks</h1>
+    <div id="results"></div>
+    <script type="module">
+      import { recognizeStroke } from "../src/recognizer.js";
+
+      const results = document.querySelector("#results");
+      const tests = [];
+      const add = (name, points, expected) => {
+        const result = recognizeStroke(points);
+        const passed = result.shape === expected;
+        tests.push({ name, passed, result });
+      };
+      const line = Array.from({ length: 24 }, (_, index) => ({ x: index * 8, y: index * 2 }));
+      const circle = Array.from({ length: 40 }, (_, index) => {
+        const angle = (Math.PI * 2 * index) / 39;
+        return { x: 100 + Math.cos(angle) * 70, y: 100 + Math.sin(angle) * 70 };
+      });
+      const triangle = [
+        ...Array.from({ length: 12 }, (_, index) => ({ x: 40 + index * 10, y: 180 - index * 12 })),
+        ...Array.from({ length: 12 }, (_, index) => ({ x: 150 - index * 10, y: 36 + index * 12 })),
+        ...Array.from({ length: 12 }, (_, index) => ({ x: 40, y: 36 + index * 12 })),
+        { x: 40, y: 180 },
+      ];
+
+      add("line", line, "line");
+      add("circle", circle, "circle");
+      add("triangle", triangle, "triangle");
+      results.innerHTML = tests
+        .map(({ name, passed, result }) => `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name} (${result.shape ?? "rejected"})</p>`)
+        .join("");
+      if (tests.some(({ passed }) => !passed)) {
+        throw new Error("One or more recognizer checks failed.");
+      }
+    </script>
+  </body>
+</html>

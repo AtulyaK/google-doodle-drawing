@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111827" />
+    <title>Doodle Motion</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Camera-powered drawing practice</p>
+          <h1>Doodle Motion</h1>
+          <p class="hero-copy">
+            Point your index finger at the camera and draw the requested shape in the air.
+          </p>
+        </div>
+        <div class="hero-badge" aria-label="On-device processing">
+          <span class="badge-dot"></span>
+          Processed on this device
+        </div>
+      </header>
+
+      <section class="game-grid" aria-label="Doodle Motion game">
+        <div class="stage-card">
+          <div class="stage-toolbar">
+            <div>
+              <p class="section-label">Live canvas</p>
+              <p id="status" class="status" role="status">Camera is off</p>
+            </div>
+            <div class="toolbar-actions">
+              <button id="startButton" class="button button-primary" type="button">Start camera</button>
+              <button id="resetButton" class="button button-ghost" type="button">Reset</button>
+            </div>
+          </div>
+
+          <div class="stage" id="stage">
+            <video id="camera" autoplay playsinline muted aria-label="Camera preview"></video>
+            <canvas id="drawingCanvas" aria-label="Finger drawing canvas"></canvas>
+            <div id="stageMessage" class="stage-message">
+              <div class="camera-icon" aria-hidden="true">◉</div>
+              <strong>Allow camera access to begin</strong>
+              <span>Your camera feed stays in this browser tab.</span>
+            </div>
+          </div>
+
+          <div class="gesture-hint">
+            <span class="hint-icon" aria-hidden="true">☝</span>
+            Extend your index finger to draw. Lower it briefly to submit your shape.
+          </div>
+        </div>
+
+        <aside class="challenge-card">
+          <div class="challenge-header">
+            <div>
+              <p class="section-label">Current challenge</p>
+              <h2 id="challengeTitle">Draw a line</h2>
+            </div>
+            <div class="progress-pill"><span id="score">0</span> / 3</div>
+          </div>
+
+          <div id="targetPreview" class="target-preview target-line" aria-label="Target shape: line">
+            <span></span>
+          </div>
+
+          <div class="feedback-panel" aria-live="polite">
+            <p id="feedbackTitle">Ready when you are</p>
+            <p id="feedbackDetail">Start the camera, then use your index finger to trace the target.</p>
+          </div>
+
+          <div class="shape-key" aria-label="Shape challenge order">
+            <span class="shape-key-item is-active" data-shape-key="line">Line</span>
+            <span class="shape-key-item" data-shape-key="circle">Circle</span>
+            <span class="shape-key-item" data-shape-key="triangle">Triangle</span>
+          </div>
+        </aside>
+      </section>
+
+      <footer class="privacy-note">
+        <span aria-hidden="true">🔒</span>
+        Hand tracking runs locally in your browser. No camera frames are uploaded.
+      </footer>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
