@@ -12,70 +12,96 @@
   <body>
     <h1>Interaction checks</h1>
     <div id="results"></div>
-    <script>
-      function createSpacebarCaptureModel(target = window) {
+    <script type="module">
+      import { createSpacebarClutch } from "../src/spacebar-clutch.js";
+
+      const PHASE = Object.freeze({
+        IDLE: "idle",
+        READY: "ready",
+        DRAWING: "drawing",
+        PAUSED: "paused",
+        SUBMITTED: "submitted",
+      });
+
+      function createSpacebarCaptureModel(initialPhase = PHASE.READY) {
         const state = {
-          spaceHeld: false,
+          phase: initialPhase,
+          complete: false,
           activeStroke: null,
           completedStrokes: [],
           boundaries: [],
           starts: 0,
+          cursor: null,
+          idlePresses: 0,
         };
 
-        const finishStroke = (boundary) => {
-          if (!state.spaceHeld) {
-            return;
-          }
-          state.spaceHeld = false;
-          state.completedStrokes.push(state.activeStroke);
-          state.activeStroke = null;
-          state.boundaries.push(boundary);
-        };
-
-        const handleKeyDown = (event) => {
-          if (event.code !== "Space" || event.repeat || state.spaceHeld) {
-            return;
-          }
-          event.preventDefault();
-          state.spaceHeld = true;
-          state.activeStroke = [];
-          state.starts += 1;
-        };
-
-        const handleKeyUp = (event) => {
-          if (event.code !== "Space") {
-            return;
-          }
-          event.preventDefault();
-          finishStroke("release");
-        };
-
-        const handleBlur = () => finishStroke("blur");
-
-        target.addEventListener("keydown", handleKeyDown);
-        target.addEventListener("keyup", handleKeyUp);
-        target.addEventListener("blur", handleBlur);
+        const clutch = createSpacebarClutch({
+          target: window,
+          canStart(event) {
+            if (state.phase === PHASE.IDLE) {
+              state.idlePresses += 1;
+              return false;
+            }
+            event.preventDefault();
+            if (state.complete) {
+              return false;
+            }
+            if (state.phase === PHASE.SUBMITTED) {
+              state.phase = PHASE.READY;
+            }
+            return state.phase === PHASE.READY;
+          },
+          onStart() {
+            state.phase = PHASE.DRAWING;
+            state.activeStroke = [];
+            state.starts += 1;
+          },
+          onFinish(boundary) {
+            state.completedStrokes.push(state.activeStroke);
+            state.boundaries.push(boundary);
+            state.phase = PHASE.SUBMITTED;
+            state.cursor = null;
+            state.activeStroke = null;
+          },
+        });
 
         return {
           state,
+          get spaceHeld() {
+            return clutch.held;
+          },
           track(point) {
-            if (state.spaceHeld) {
+            if (!clutch.held) {
+              return;
+            }
+            state.cursor = point;
+            if (state.phase === PHASE.PAUSED) {
+              state.phase = PHASE.DRAWING;
+            }
+            if (state.phase === PHASE.DRAWING) {
               state.activeStroke.push(point);
             }
           },
           trackingLost() {
-            return state.spaceHeld;
+            state.cursor = null;
+            if (state.phase === PHASE.DRAWING) {
+              state.phase = PHASE.PAUSED;
+            }
+            return clutch.held;
+          },
+          finish() {
+            if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
+              clutch.finish("manual");
+            }
           },
           destroy() {
-            target.removeEventListener("keydown", handleKeyDown);
-            target.removeEventListener("keyup", handleKeyUp);
-            target.removeEventListener("blur", handleBlur);
+            clutch.destroy();
           },
         };
       }
 
-      const key = (type, repeat = false) =>
-        window.dispatchEvent(new KeyboardEvent(type, {
+      const key = (type, { repeat = false, target = window } = {}) =>
+        target.dispatchEvent(new KeyboardEvent(type, {
           code: "Space",
           key: " ",
           repeat,
@@ -84,8 +110,8 @@
         }));
 
       const tests = [];
-      const test = (name, check) => {
-        const model = createSpacebarCaptureModel();
+      const test = (name, check, initialPhase) => {
+        const model = createSpacebarCaptureModel(initialPhase);
         try {
           check(model);
           tests.push({ name, passed: true });
@@ -101,31 +127,54 @@
         }
       };
 
-      test("fingertip samples are ignored while Space is not held", (model) => {
+      test("fingertip samples and cursor are ignored while Space is not held", (model) => {
         model.track({ x: 10, y: 20 });
         assert(model.state.starts === 0, "capture started without Space");
         assert(model.state.activeStroke === null, "an inactive sample created a stroke");
+        assert(model.state.cursor === null, "an inactive sample created a cursor");
         assert(model.state.completedStrokes.length === 0, "an inactive sample completed a stroke");
       });
 
-      test("Space release closes one stroke and excludes later movement", (model) => {
+      test("text-entry targets do not start the clutch", (model) => {
+        const input = document.createElement("input");
+        document.body.append(input);
+        key("keydown", { target: input });
+        input.remove();
+
+        assert(model.state.starts === 0, "text input started a stroke");
+        assert(model.spaceHeld === false, "text input held the clutch");
+      });
+
+      test("Space in IDLE does not start the clutch", (model) => {
+        key("keydown");
+        key("keyup");
+
+        assert(model.state.idlePresses === 1, "IDLE press was not reported");
+        assert(model.state.starts === 0, "IDLE press started a stroke");
+        assert(model.state.boundaries.length === 0, "IDLE release finished a stroke");
+      }, PHASE.IDLE);
+
+      test("Space release closes one stroke exactly once and excludes later movement", (model) => {
         key("keydown");
         model.track({ x: 10, y: 20 });
         key("keyup");
-        model.track({ x: 30, y: 40 });
-
-        assert(model.state.boundaries.join() === "release", "release was not recorded as the boundary");
-        assert(model.state.completedStrokes.length === 1, "release did not close exactly one stroke");
-        assert(model.state.completedStrokes[0].length === 1, "movement after release leaked into the stroke");
-      });
-
-      test("window blur closes the held stroke as an explicit boundary", (model) => {
-        key("keydown");
-        model.track({ x: 10, y: 20 });
         window.dispatchEvent(new Event("blur"));
         model.track({ x: 30, y: 40 });
 
-        assert(model.state.boundaries.join() === "blur", "blur was not recorded as the boundary");
+        assert(model.state.boundaries.join() === "release", "release was not the only boundary");
+        assert(model.state.completedStrokes.length === 1, "release did not close exactly one stroke");
+        assert(model.state.completedStrokes[0].length === 1, "movement after release leaked into the stroke");
+        assert(model.state.cursor === null, "cursor remained after release");
+      });
+
+      test("window blur closes the held stroke exactly once", (model) => {
+        key("keydown");
+        model.track({ x: 10, y: 20 });
+        window.dispatchEvent(new Event("blur"));
+        key("keyup");
+        model.track({ x: 30, y: 40 });
+
+        assert(model.state.boundaries.join() === "blur", "blur was not the only boundary");
         assert(model.state.completedStrokes.length === 1, "blur did not close exactly one stroke");
         assert(model.state.completedStrokes[0].length === 1, "movement after blur leaked into the stroke");
       });
@@ -133,13 +182,25 @@
       test("repeated Space keydown does not start a duplicate stroke", (model) => {
         key("keydown");
         model.track({ x: 10, y: 20 });
-        key("keydown", true);
+        key("keydown", { repeat: true });
         model.track({ x: 30, y: 40 });
         key("keyup");
 
         assert(model.state.starts === 1, "key repeat started another stroke");
         assert(model.state.completedStrokes.length === 1, "key repeat split the stroke");
         assert(model.state.completedStrokes[0].length === 2, "key repeat discarded captured samples");
+      });
+
+      test("tracking loss is recoverable while Space remains held", (model) => {
+        key("keydown");
+        model.track({ x: 10, y: 20 });
+        const wasDrawing = model.trackingLost();
+        model.track({ x: 30, y: 40 });
+        key("keyup");
+
+        assert(wasDrawing === true, "tracking loss released the clutch");
+        assert(model.state.completedStrokes.length === 1, "recovered stroke was not submitted");
+        assert(model.state.completedStrokes[0].length === 2, "tracking recovery lost captured samples");
       });
 
       test("tracking loss cannot capture or start a stroke without Space", (model) => {
@@ -149,7 +210,39 @@
         assert(wasDrawing === false, "tracking loss reported drawing without Space");
         assert(model.state.starts === 0, "tracking loss started a stroke");
         assert(model.state.activeStroke === null, "tracking loss created capture state");
+        assert(model.state.cursor === null, "tracking loss created a cursor");
       });
+
+      test("manual Finish closes the held stroke exactly once", (model) => {
+        key("keydown");
+        model.track({ x: 10, y: 20 });
+        model.finish();
+        key("keyup");
+        window.dispatchEvent(new Event("blur"));
+
+        assert(model.state.boundaries.join() === "manual", "manual Finish was not the only boundary");
+        assert(model.state.completedStrokes.length === 1, "manual Finish did not close exactly one stroke");
+        assert(model.spaceHeld === false, "manual Finish left the clutch held");
+      });
+
+      test("a completed challenge cannot restart", (model) => {
+        model.state.complete = true;
+        key("keydown");
+        model.track({ x: 10, y: 20 });
+        key("keyup");
+
+        assert(model.state.starts === 0, "completed state restarted drawing");
+        assert(model.state.activeStroke === null, "completed state created capture state");
+        assert(model.state.cursor === null, "completed state created a cursor");
+        assert(model.state.boundaries.length === 0, "completed state finished a stroke");
+      });
+
+      test("Space starts a new stroke from SUBMITTED", (model) => {
+        key("keydown");
+        assert(model.state.starts === 1, "SUBMITTED did not restart drawing");
+        assert(model.state.phase === PHASE.DRAWING, "SUBMITTED did not transition to DRAWING");
+        key("keyup");
+      }, PHASE.SUBMITTED);
 
       const results = document.querySelector("#results");
       results.innerHTML = tests

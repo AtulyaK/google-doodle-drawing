@@ -1,6 +1,7 @@
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm";
 import { VectorOneEuroFilter } from "./one-euro-filter.js";
 import { recognizeStroke } from "./recognizer.js";
+import { createSpacebarClutch } from "./spacebar-clutch.js";
 
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
@@ -57,7 +58,6 @@ const state = {
   stroke: [],
   cursor: null,
   pauseSince: null,
-  spaceHeld: false,
   pointFilter: new VectorOneEuroFilter({ minCutoff: 1.1, beta: 0.08 }),
   targetIndex: 0,
   score: 0,
@@ -263,7 +263,7 @@ function clearStroke() {
 }
 
 function appendPoint(point, timestamp) {
-  if (!state.spaceHeld) {
+  if (!spacebarClutch.held) {
     return;
   }
   appendSample(state.stroke, point, timestamp, true);
@@ -274,7 +274,7 @@ function resetStrokeLifecycle() {
   state.stroke = [];
   state.cursor = null;
   state.pauseSince = null;
-  state.spaceHeld = false;
+  spacebarClutch.reset();
   state.pointFilter.reset();
   updateFinishButton();
 }
@@ -328,7 +328,7 @@ function handleLandmarks(landmarks, timestamp) {
     return;
   }
 
-  if (!state.spaceHeld) {
+  if (!spacebarClutch.held) {
     const hadCursor = state.cursor !== null;
     state.cursor = null;
     if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
@@ -356,7 +356,7 @@ function handleLandmarks(landmarks, timestamp) {
   }
 
   if (state.phase === PHASE.PAUSED) {
-    if (state.spaceHeld) {
+    if (spacebarClutch.held) {
       const resumedQuickly = timestamp - state.pauseSince <= TRACKING_LOSS_GRACE_MS;
       resumeDrawing(timestamp);
       appendPoint(fingertip, timestamp);
@@ -445,61 +445,30 @@ async function createHandLandmarker() {
 
 function finishStroke() {
   if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
-    state.spaceHeld = false;
-    state.cursor = null;
-    submitStroke(performance.now());
+    spacebarClutch.finish("manual");
   }
 }
 
-function isTextEntryTarget(target) {
-  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
-}
-
-function handleSpaceKeyDown(event) {
-  if (event.code !== "Space" || event.repeat || isTextEntryTarget(event.target)) {
-    return;
-  }
-
+function canStartSpacebarStroke(event) {
   if (state.phase === PHASE.IDLE) {
     setStatus("Start the camera before drawing.", "neutral");
-    return;
+    return false;
   }
 
   event.preventDefault();
   if (state.complete) {
-    return;
+    return false;
   }
   if (state.phase === PHASE.SUBMITTED) {
     transitionToReady(performance.now());
   }
-  if (state.phase === PHASE.READY) {
-    state.spaceHeld = true;
-    beginStroke(performance.now());
-  }
-}
-
-function handleSpaceKeyUp(event) {
-  if (event.code !== "Space") {
-    return;
-  }
-
-  if (state.spaceHeld) {
-    event.preventDefault();
-    state.spaceHeld = false;
-    state.cursor = null;
-    if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
-      submitStroke(performance.now());
-    }
-  }
+  return state.phase === PHASE.READY;
 }
 
 function finishSpacebarStroke() {
-  if (state.spaceHeld) {
-    state.spaceHeld = false;
-    state.cursor = null;
-    if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
-      submitStroke(performance.now());
-    }
+  state.cursor = null;
+  if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
+    submitStroke(performance.now());
   }
 }
 
@@ -601,12 +570,16 @@ function resetGame() {
   }
 }
 
+const spacebarClutch = createSpacebarClutch({
+  target: window,
+  canStart: canStartSpacebarStroke,
+  onStart: () => beginStroke(performance.now()),
+  onFinish: finishSpacebarStroke,
+});
+
 elements.startButton.addEventListener("click", startCamera);
 elements.finishButton?.addEventListener("click", finishStroke);
 elements.resetButton.addEventListener("click", resetGame);
-window.addEventListener("keydown", handleSpaceKeyDown);
-window.addEventListener("keyup", handleSpaceKeyUp);
-window.addEventListener("blur", finishSpacebarStroke);
 window.addEventListener("pagehide", stopCamera);
 window.addEventListener("resize", resizeCanvas);
 

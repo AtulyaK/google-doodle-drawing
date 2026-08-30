@@ -39,3 +39,5 @@ Use a current browser with `getUserMedia`, ES modules, WebAssembly, and WebGL/WA
 Serve the repository locally, then open <http://localhost:5173/tests/recognizer.test.html> to run the browser-based synthetic stroke checks.
 
 Open <http://localhost:5173/tests/interaction.test.html> to run the Spacebar hold/release boundary checks.
+
+Open <http://localhost:5173/tests/recognizer.adversarial.test.html> for near-miss and rotated-stroke checks, and <http://localhost:5173/tests/camera-lifecycle.test.html> for stubbed camera/tracking lifecycle checks.

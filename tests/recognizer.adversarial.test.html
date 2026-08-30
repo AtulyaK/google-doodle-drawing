@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Recognizer adversarial checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <h1>Recognizer adversarial checks</h1>
+    <p id="summary">Running…</p>
+    <div id="results"></div>
+    <script type="module">
+      import { recognizeStroke } from "../src/recognizer.js";
+
+      const tests = [];
+      const check = (name, points, expectedShape, expectedOrientation = null) => {
+        const result = recognizeStroke(points);
+        const passed =
+          result.shape === expectedShape &&
+          (expectedOrientation === null || result.orientation === expectedOrientation);
+        tests.push({ name, passed, result });
+      };
+
+      const line = (start, end, count = 9, offsets = []) =>
+        Array.from({ length: count }, (_, index) => {
+          const t = index / (count - 1);
+          const offset = offsets[index] ?? 0;
+          const dx = end.x - start.x;
+          const dy = end.y - start.y;
+          const length = Math.hypot(dx, dy) || 1;
+          return {
+            x: start.x + dx * t - (dy / length) * offset,
+            y: start.y + dy * t + (dx / length) * offset,
+          };
+        });
+
+      const polyline = (vertices, countPerSegment = 7) => {
+        const points = [];
+        for (let index = 1; index < vertices.length; index += 1) {
+          const segment = line(vertices[index - 1], vertices[index], countPerSegment);
+          points.push(...(index === 1 ? segment : segment.slice(1)));
+        }
+        return points;
+      };
+
+      const arc = (center, radius, startAngle, endAngle, count, radialNoise = 0) =>
+        Array.from({ length: count }, (_, index) => {
+          const t = index / (count - 1);
+          const angle = startAngle + (endAngle - startAngle) * t;
+          const noisyRadius = radius + Math.sin(index * 1.7) * radialNoise;
+          return {
+            x: center.x + Math.cos(angle) * noisyRadius,
+            y: center.y + Math.sin(angle) * noisyRadius,
+          };
+        });
+
+      check(
+        "20 degree line remains horizontal",
+        line({ x: 40, y: 70 }, { x: 340, y: 179 }, 9, [0, 2, -2, 1, -1, 2, -2, 1, 0]),
+        "line",
+        "horizontal",
+      );
+      check(
+        "45 degree reverse line remains diagonal",
+        line({ x: 330, y: 300 }, { x: 50, y: 20 }, 7, [0, 2, -2, 1, -1, 2, 0]),
+        "line",
+        "diagonal",
+      );
+      check(
+        "70 degree line remains vertical",
+        line({ x: 70, y: 300 }, { x: 179, y: 0 }, 9, [0, -2, 2, -1, 1, -2, 2, -1, 0]),
+        "line",
+        "vertical",
+      );
+
+      check(
+        "noisy circle tolerates a modest closure gap",
+        arc({ x: 180, y: 160 }, 78, 0.2, Math.PI * 2 - 0.28, 18, 4),
+        "circle",
+      );
+      check(
+        "noisy triangle tolerates a modest closure gap",
+        polyline([
+          { x: 72, y: 246 },
+          { x: 180, y: 58 },
+          { x: 296, y: 244 },
+          { x: 82, y: 238 },
+        ], 8),
+        "triangle",
+      );
+      check(
+        "large circle opening is rejected",
+        arc({ x: 180, y: 160 }, 78, 0.25, Math.PI * 1.58, 16, 2),
+        null,
+      );
+
+      check(
+        "five-point diagonal line is recognized",
+        line({ x: 42, y: 54 }, { x: 330, y: 274 }, 5, [0, 3, -3, 2, 0]),
+        "line",
+        "diagonal",
+      );
+      check(
+        "five-point v is recognized",
+        [
+          { x: 60, y: 54 },
+          { x: 110, y: 148 },
+          { x: 165, y: 250 },
+          { x: 220, y: 148 },
+          { x: 274, y: 54 },
+        ],
+        "v",
+      );
+      check(
+        "four-point path is too sparse to classify",
+        line({ x: 40, y: 80 }, { x: 340, y: 90 }, 4),
+        null,
+      );
+
+      check(
+        "shallow bent path is not promoted to a v",
+        polyline([
+          { x: 50, y: 80 },
+          { x: 180, y: 125 },
+          { x: 310, y: 80 },
+        ], 7),
+        null,
+      );
+      check(
+        "open triangle is rejected",
+        polyline([
+          { x: 72, y: 246 },
+          { x: 180, y: 58 },
+          { x: 296, y: 244 },
+          { x: 180, y: 245 },
+        ], 8),
+        null,
+      );
+      check(
+        "rectangular loop is not mistaken for a supported shape",
+        polyline([
+          { x: 70, y: 70 },
+          { x: 290, y: 70 },
+          { x: 290, y: 235 },
+          { x: 70, y: 235 },
+          { x: 70, y: 70 },
+        ], 7),
+        null,
+      );
+
+      check(
+        "backtracking zigzag scribble is rejected",
+        [
+          { x: 40, y: 70 },
+          { x: 290, y: 90 },
+          { x: 75, y: 135 },
+          { x: 310, y: 175 },
+          { x: 65, y: 220 },
+          { x: 285, y: 270 },
+          { x: 105, y: 300 },
+        ],
+        null,
+      );
+      check(
+        "looped scribble is rejected",
+        [
+          { x: 65, y: 155 },
+          { x: 135, y: 65 },
+          { x: 245, y: 95 },
+          { x: 275, y: 205 },
+          { x: 175, y: 270 },
+          { x: 75, y: 220 },
+          { x: 225, y: 145 },
+          { x: 115, y: 115 },
+          { x: 65, y: 155 },
+        ],
+        null,
+      );
+
+      const passed = tests.filter((test) => test.passed).length;
+      const failed = tests.length - passed;
+      const summary = `${passed} passed, ${failed} failed`;
+      document.body.dataset.passed = String(passed);
+      document.body.dataset.failed = String(failed);
+      document.querySelector("#summary").textContent = summary;
+      document.querySelector("#summary").className = failed === 0 ? "pass" : "fail";
+      document.querySelector("#results").innerHTML = tests
+        .map(({ name, passed: testPassed, result }) =>
+          `<p class="${testPassed ? "pass" : "fail"}">${testPassed ? "PASS" : "FAIL"}: ${name} ` +
+          `(${result.shape ?? "rejected"}, confidence ${(result.confidence ?? 0).toFixed(2)})</p>`,
+        )
+        .join("");
+
+      if (failed > 0) {
+        document.title = `FAIL: ${summary}`;
+        const failures = tests.filter((test) => !test.passed).map((test) => test.name).join(", ");
+        throw new Error(`Recognizer adversarial checks failed: ${summary}. ${failures}`);
+      }
+      document.title = `PASS: ${summary}`;
+    </script>
+  </body>
+</html>

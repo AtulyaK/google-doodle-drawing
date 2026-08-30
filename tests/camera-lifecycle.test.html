@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Camera lifecycle checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; }
+      #appFixture { position: fixed; left: -10000px; width: 320px; }
+      #stage { width: 320px; height: 200px; }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm": "data:text/javascript,export%20const%20FilesetResolver%3D%7BforVisionTasks%3Aasync()%3D%3E(%7B%7D)%7D%3Bexport%20const%20HandLandmarker%3D%7BcreateFromOptions%3Aasync()%3D%3Ewindow.__fakeHandLandmarker%7D%3B"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <h1>Camera lifecycle checks</h1>
+    <p>
+      Scope: integration checks against the app's current DOM and event seams, with camera and
+      MediaPipe boundaries stubbed. This does not validate real hardware or model inference.
+    </p>
+    <p id="summary">Running…</p>
+    <div id="results"></div>
+
+    <main id="appFixture" aria-hidden="true">
+      <p id="status">Camera is off</p>
+      <button id="startButton" type="button">Start camera</button>
+      <button id="finishButton" type="button" disabled>Finish stroke</button>
+      <button id="resetButton" type="button">Reset</button>
+      <div id="stage">
+        <video id="camera" muted></video>
+        <canvas id="drawingCanvas"></canvas>
+        <div id="stageMessage"></div>
+      </div>
+      <h2 id="challengeTitle"></h2>
+      <div id="targetPreview"></div>
+      <div class="feedback-panel">
+        <p id="feedbackTitle"></p>
+        <p id="feedbackDetail"></p>
+      </div>
+      <span id="score"></span>
+      <span data-shape-key="line"></span>
+      <span data-shape-key="circle"></span>
+      <span data-shape-key="triangle"></span>
+    </main>
+
+    <script>
+      const scheduledFrames = new Map();
+      let nextFrameId = 1;
+      let videoTime = 0;
+      let streamEnded = false;
+      let trackStopCalls = 0;
+      let landmarkerCloseCalls = 0;
+
+      window.requestAnimationFrame = (callback) => {
+        const id = nextFrameId++;
+        scheduledFrames.set(id, callback);
+        return id;
+      };
+      window.cancelAnimationFrame = (id) => scheduledFrames.delete(id);
+
+      const track = new EventTarget();
+      track.stop = () => {
+        trackStopCalls += 1;
+      };
+      track.end = () => {
+        streamEnded = true;
+        track.dispatchEvent(new Event("ended"));
+      };
+
+      const stream = {
+        get active() {
+          return !streamEnded;
+        },
+        getTracks: () => [track],
+        getVideoTracks: () => [track],
+      };
+
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getUserMedia: async () => stream },
+      });
+
+      const video = document.querySelector("#camera");
+      let attachedStream = null;
+      Object.defineProperties(video, {
+        readyState: { configurable: true, get: () => 4 },
+        srcObject: {
+          configurable: true,
+          get: () => attachedStream,
+          set: (value) => {
+            attachedStream = value;
+          },
+        },
+        currentTime: {
+          configurable: true,
+          get: () => videoTime,
+          set: (value) => {
+            videoTime = value;
+          },
+        },
+      });
+      video.play = async () => {};
+
+      window.__fakeLandmarkResult = { landmarks: [] };
+      window.__fakeHandLandmarker = {
+        detectForVideo: () => window.__fakeLandmarkResult,
+        close: () => {
+          landmarkerCloseCalls += 1;
+        },
+      };
+    </script>
+
+    <script type="module">
+      const tests = [];
+      const assert = (condition, message) => {
+        if (!condition) {
+          throw new Error(message);
+        }
+      };
+      const test = async (name, check) => {
+        try {
+          await check();
+          tests.push({ name, passed: true });
+        } catch (error) {
+          tests.push({ name, passed: false, error });
+        }
+      };
+      const waitFor = async (check, message) => {
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          if (check()) {
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        throw new Error(message);
+      };
+      const runFrame = (timestamp) => {
+        const entry = scheduledFrames.entries().next().value;
+        assert(entry, "no animation frame was scheduled");
+        const [id, callback] = entry;
+        scheduledFrames.delete(id);
+        callback(timestamp);
+      };
+      const dispatchSpace = (type) =>
+        window.dispatchEvent(new KeyboardEvent(type, {
+          code: "Space",
+          key: " ",
+          bubbles: true,
+          cancelable: true,
+        }));
+      const fingertipResult = () => {
+        const hand = Array.from({ length: 9 }, () => ({ x: 0.5, y: 0.5 }));
+        return { landmarks: [hand] };
+      };
+
+      await import("../src/main.js");
+      document.querySelector("#startButton").click();
+      await waitFor(
+        () => document.querySelector("#status").textContent === "Camera ready — hold Space to draw",
+        "camera did not reach ready state",
+      );
+
+      await test("landmarks do not create a capturable stroke without Space", () => {
+        window.__fakeLandmarkResult = fingertipResult();
+        video.currentTime = 1;
+        runFrame(10);
+
+        assert(document.querySelector("#finishButton").disabled, "Finish became enabled without Space");
+        assert(
+          document.querySelector("#status").textContent === "Camera ready — hold Space to draw",
+          "landmarks without Space changed the ready state",
+        );
+      });
+
+      await test("a frame becomes stale only after the 220 ms grace window", () => {
+        dispatchSpace("keydown");
+        for (let index = 0; index < 8; index += 1) {
+          video.currentTime = index + 2;
+          runFrame(100 + index * 10);
+        }
+        runFrame(390);
+
+        assert(
+          document.querySelector("#status").textContent.startsWith("Space held"),
+          "the frame was treated as stale at exactly 220 ms",
+        );
+
+        runFrame(391);
+        assert(
+          document.querySelector("#status").textContent.startsWith("Tracking lost"),
+          "the frame was not treated as stale after 220 ms",
+        );
+        assert(!document.querySelector("#finishButton").disabled, "paused stroke was not finishable");
+      });
+
+      await test("camera ended cleans up and resets capture state", () => {
+        track.end();
+
+        assert(document.querySelector("#status").textContent === "Camera disconnected", "disconnect status missing");
+        assert(document.querySelector("#stageMessage").classList.contains("is-hidden") === false, "camera prompt stayed hidden");
+        assert(document.querySelector("#startButton").textContent === "Start camera", "start label was not reset");
+        assert(document.querySelector("#startButton").disabled === false, "start button stayed disabled");
+        assert(document.querySelector("#finishButton").disabled, "finish button stayed enabled");
+        assert(video.srcObject === null, "video stream stayed attached");
+        assert(trackStopCalls === 1, `camera track stop count was ${trackStopCalls}`);
+        assert(landmarkerCloseCalls === 1, `landmarker close count was ${landmarkerCloseCalls}`);
+        assert(scheduledFrames.size === 0, "animation frame stayed scheduled");
+
+        dispatchSpace("keyup");
+        assert(document.querySelector("#finishButton").disabled, "released stale Space state submitted a stroke");
+      });
+
+      const passed = tests.filter(({ passed }) => passed).length;
+      const failed = tests.length - passed;
+      document.querySelector("#results").innerHTML = tests
+        .map(({ name, passed: ok, error }) =>
+          `<p class="${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}: ${name}${error ? ` — ${error.message}` : ""}</p>`)
+        .join("");
+      document.querySelector("#summary").textContent = `${passed} passed, ${failed} failed`;
+      document.body.dataset.status = failed === 0 ? "passed" : "failed";
+      window.__cameraLifecycleTestResults = { passed, failed, tests };
+
+      if (failed > 0) {
+        throw new Error(`${failed} camera lifecycle check(s) failed`);
+      }
+    </script>
+  </body>
+</html>
