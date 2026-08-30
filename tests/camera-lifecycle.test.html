@@ -176,6 +176,7 @@
           document.querySelector("#status").textContent === "Camera ready — hold Space to draw",
           "landmarks without Space changed the ready state",
         );
+        assert(scheduledFrames.size === 1, "frame loop scheduled more than one watchdog");
       });
 
       await test("a frame becomes stale only after the 220 ms grace window", () => {

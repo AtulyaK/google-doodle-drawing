@@ -398,37 +398,46 @@ function handleTrackingLoss(timestamp) {
   }
 }
 
+function scheduleFrame() {
+  if (state.animationFrame === null && state.stream && state.handLandmarker) {
+    state.animationFrame = requestAnimationFrame(processFrame);
+  }
+}
+
 function processFrame(frameTime) {
-  if (!state.handLandmarker) {
-    state.animationFrame = requestAnimationFrame(processFrame);
-    return;
-  }
+  state.animationFrame = null;
 
-  const frameIsStale =
-    state.lastFrameTimestamp !== null &&
-    frameTime - state.lastFrameTimestamp > TRACKING_LOSS_GRACE_MS;
+  try {
+    if (!state.handLandmarker || !state.stream) {
+      return;
+    }
 
-  if (frameIsStale && (state.cursor || state.phase === PHASE.DRAWING)) {
-    handleTrackingLoss(frameTime);
-  }
+    const frameIsStale =
+      state.lastFrameTimestamp !== null &&
+      frameTime - state.lastFrameTimestamp > TRACKING_LOSS_GRACE_MS;
 
-  if (elements.video.readyState < 2) {
-    state.animationFrame = requestAnimationFrame(processFrame);
-    return;
-  }
-
-  if (elements.video.currentTime !== state.lastVideoTime) {
-    state.lastVideoTime = elements.video.currentTime;
-    state.lastFrameTimestamp = frameTime;
-    const result = state.handLandmarker.detectForVideo(elements.video, frameTime);
-    const landmarks = result.landmarks?.[0];
-    if (landmarks) {
-      handleLandmarks(landmarks, frameTime);
-    } else {
+    if (frameIsStale && (state.cursor || state.phase === PHASE.DRAWING)) {
       handleTrackingLoss(frameTime);
     }
+
+    if (elements.video.readyState < 2) {
+      return;
+    }
+
+    if (elements.video.currentTime !== state.lastVideoTime) {
+      state.lastVideoTime = elements.video.currentTime;
+      state.lastFrameTimestamp = frameTime;
+      const result = state.handLandmarker.detectForVideo(elements.video, frameTime);
+      const landmarks = result.landmarks?.[0];
+      if (landmarks) {
+        handleLandmarks(landmarks, frameTime);
+      } else {
+        handleTrackingLoss(frameTime);
+      }
+    }
+  } finally {
+    scheduleFrame();
   }
-  state.animationFrame = requestAnimationFrame(processFrame);
 }
 
 async function createHandLandmarker() {
@@ -525,7 +534,7 @@ async function startCamera() {
       `Hold Space while tracing a ${SHAPE_LABELS[currentShape()]} with your index fingertip, then release to submit.`,
       "neutral",
     );
-    state.animationFrame = requestAnimationFrame(processFrame);
+    scheduleFrame();
     elements.startButton.textContent = "Camera ready";
   } catch (error) {
     stopCamera();
