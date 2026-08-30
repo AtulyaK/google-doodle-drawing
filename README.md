@@ -47,3 +47,5 @@ Open <http://localhost:5173/tests/one-euro.test.html> for filter conformance che
 Open <http://localhost:5173/tests/triangle-scale.test.html> for small and sparse triangle recognition checks.
 
 Open <http://localhost:5173/tests/line-speed.test.html> for short-line and open-ended identification coverage through the production camera flow.
+
+Open <http://localhost:5173/tests/line-v-regression.test.html> for filtered short-line and V recognition regressions.

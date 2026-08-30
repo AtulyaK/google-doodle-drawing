@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Short line and V regression checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; }
+    </style>
+  </head>
+  <body>
+    <h1>Short line and V regression checks</h1>
+    <p>
+      These cases model the production One Euro filter and fingertip jitter that previously made
+      short lines and Vs fail.
+    </p>
+    <p id="summary">Running...</p>
+    <div id="results"></div>
+    <script type="module">
+      import { VectorOneEuroFilter } from "../src/one-euro-filter.js";
+      import { recognizeStroke } from "../src/recognizer.js";
+
+      const jitterPattern = [0, 1, -1, 0.5, -0.5, 0, 0.75, -0.75, 0];
+      const lineStroke = (length, jitter, count = 9) =>
+        Array.from({ length: count }, (_, index) => {
+          const ratio = index / (count - 1);
+          return {
+            x: 100 + length * ratio,
+            y: 120 + jitter * jitterPattern[index % jitterPattern.length],
+          };
+        });
+
+      const vStroke = (size, jitter, countPerLeg = 5) => {
+        const vertices = [
+          { x: 100, y: 80 },
+          { x: 100 + size / 2, y: 80 + size },
+          { x: 100 + size, y: 80 },
+        ];
+        const points = [];
+        for (let segment = 0; segment < vertices.length - 1; segment += 1) {
+          const start = vertices[segment];
+          const end = vertices[segment + 1];
+          for (let index = 0; index < countPerLeg; index += 1) {
+            if (segment > 0 && index === 0) {
+              continue;
+            }
+            const ratio = index / (countPerLeg - 1);
+            const noise = jitter * jitterPattern[points.length % jitterPattern.length];
+            points.push({
+              x: start.x + (end.x - start.x) * ratio + noise,
+              y: start.y + (end.y - start.y) * ratio - noise,
+            });
+          }
+        }
+        return points;
+      };
+
+      const applyProductionFilter = (points) => {
+        const filter = new VectorOneEuroFilter({ minCutoff: 1.1, beta: 0.08 });
+        return points.map((point, index) => filter.filter(point, index * 33));
+      };
+
+      const cases = [
+        {
+          name: "filtered 20 px clean line remains a line",
+          expected: "line",
+          points: applyProductionFilter(lineStroke(20, 0)),
+        },
+        {
+          name: "filtered 24 px clean line remains a line",
+          expected: "line",
+          points: applyProductionFilter(lineStroke(24, 0)),
+        },
+        {
+          name: "filtered 24 px line tolerates 3 px jitter",
+          expected: "line",
+          points: applyProductionFilter(lineStroke(24, 3)),
+        },
+        {
+          name: "filtered 32 px line tolerates 3 px jitter",
+          expected: "line",
+          points: applyProductionFilter(lineStroke(32, 3)),
+        },
+        {
+          name: "filtered 40 px V tolerates 3 px jitter",
+          expected: "v",
+          points: applyProductionFilter(vStroke(40, 3)),
+        },
+      ];
+      const results = cases.map(({ name, expected, points }) => {
+        const result = recognizeStroke(points);
+        return { name, expected, result, passed: result.shape === expected };
+      });
+      const passed = results.filter(({ passed: ok }) => ok).length;
+      const failed = results.length - passed;
+
+      document.querySelector("#results").innerHTML = results
+        .map(({ name, expected, result, passed: ok }) =>
+          `<p class="${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}: ${name} (expected ${expected}, got ${result.shape ?? "rejected"}, confidence ${(result.confidence ?? 0).toFixed(2)})</p>`)
+        .join("");
+      document.querySelector("#summary").textContent = `${passed} passed, ${failed} failed`;
+      document.body.dataset.status = failed === 0 ? "passed" : "failed";
+      window.__lineVRegressionResults = { passed, failed, results };
+
+      if (failed > 0) {
+        throw new Error(`${failed} short line/V regression check(s) failed`);
+      }
+    </script>
+  </body>
+</html>

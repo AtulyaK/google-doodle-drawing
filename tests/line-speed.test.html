@@ -140,6 +140,7 @@
         landmarks[8] = { x, y };
         window.__fakeLandmarkResult = { landmarks: [landmarks] };
       };
+      const jitterPattern = [0, 1, -1, 0.5, -0.5, 0, 0.75, -0.75, 0];
 
       await import("../src/main.js");
       document.querySelector("#startButton").click();
@@ -203,6 +204,25 @@
         name: "a recognized shape is accepted without matching a target order",
         passed: vScore === "2" && document.querySelector("#feedbackTitle").textContent === "Shape identified",
         detail: `score=${vScore}, feedback=${document.querySelector("#feedbackTitle").textContent}`,
+      });
+
+      dispatchSpace("keydown");
+      for (let index = 0; index < jitterPattern.length; index += 1) {
+        const ratio = index / (jitterPattern.length - 1);
+        setFingertip(
+          0.465 + ratio * 0.07,
+          0.5 + (jitterPattern[index] * 3) / 200,
+        );
+        video.currentTime = 40 + index;
+        runFrame(700 + index * 33);
+      }
+      dispatchSpace("keyup");
+
+      const jitteredShortLineScore = document.querySelector("#score").textContent;
+      tests.push({
+        name: "a short jittered line submits through production flow",
+        passed: jitteredShortLineScore === "3" && document.querySelector("#feedbackTitle").textContent === "Shape identified",
+        detail: `score=${jitteredShortLineScore}, feedback=${document.querySelector("#feedbackTitle").textContent}`,
       });
 
       const passed = tests.filter(({ passed: ok }) => ok).length;

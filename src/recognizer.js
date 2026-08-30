@@ -1,6 +1,10 @@
 const MIN_POINTS = 5;
 const RESAMPLE_COUNT = 64;
 const MIN_DIAGONAL = 24;
+const MIN_LINE_DIAGONAL = 14;
+const SHORT_LINE_MAX_DIAGONAL = 40;
+const LINE_CONFIDENCE_THRESHOLD = 0.78;
+const SHORT_LINE_CONFIDENCE_THRESHOLD = 0.72;
 const EPSILON = 1e-6;
 
 function distance(a, b) {
@@ -276,7 +280,8 @@ function lineConfidence(points, box) {
 
   const roughness = 1 - directDistance / totalLength;
   const deviation = maxDeviationFromLine(points, start, end) / Math.max(box.diagonal, 1);
-  const corners = detectCorners(points, false, 0.45);
+  const simplified = simplify(points, Math.max(2.5, box.diagonal * 0.04));
+  const corners = detectCorners(simplified, false, 0.45);
 
   if (corners.length > 0 || roughness > 0.14 || deviation > 0.06) {
     return 0;
@@ -306,27 +311,28 @@ function lineOrientation(points) {
 }
 
 function vConfidence(points, box) {
-  const corners = detectCorners(points, false, 0.55);
+  const simplified = simplify(points, Math.max(4, box.diagonal * 0.06));
+  const corners = detectCorners(simplified, false, 0.55);
   if (corners.length !== 1) {
     return 0;
   }
 
   const corner = corners[0];
-  const start = points[0];
-  const middle = points[corner.index];
-  const end = points[points.length - 1];
-  const totalLength = pathLength(points);
+  const start = simplified[0];
+  const middle = simplified[corner.index];
+  const end = simplified[simplified.length - 1];
+  const totalLength = pathLength(simplified);
   const directDistance = distance(start, end);
   if (totalLength <= EPSILON || directDistance <= EPSILON) {
     return 0;
   }
 
-  const firstLeg = pathLength(points.slice(0, corner.index + 1));
-  const secondLeg = pathLength(points.slice(corner.index));
+  const firstLeg = pathLength(simplified.slice(0, corner.index + 1));
+  const secondLeg = pathLength(simplified.slice(corner.index));
   const legBalance = Math.min(firstLeg, secondLeg) / Math.max(firstLeg, secondLeg, EPSILON);
   const cornerStrength = turnStrength(start, middle, end);
   const openness = directDistance / totalLength;
-  const cornerPosition = corner.index / (points.length - 1);
+  const cornerPosition = corner.index / (simplified.length - 1);
   const cornerDepth = perpendicularDistance(middle, start, end) / Math.max(box.diagonal, 1);
 
   if (
@@ -468,7 +474,7 @@ export function recognizeStroke(inputPoints) {
   }
 
   const rawBox = boundingBox(rawPoints);
-  if (rawBox.diagonal < MIN_DIAGONAL) {
+  if (rawBox.diagonal < MIN_LINE_DIAGONAL) {
     return { shape: null, confidence: 0 };
   }
 
@@ -488,7 +494,17 @@ export function recognizeStroke(inputPoints) {
   ];
 
   const best = metrics.sort((a, b) => b.confidence - a.confidence)[0];
-  const threshold = best.shape === "line" ? 0.78 : best.shape === "triangle" ? 0.7 : 0.72;
+  if (rawBox.diagonal < MIN_DIAGONAL && best.shape !== "line") {
+    return { shape: null, confidence: best.confidence };
+  }
+  const threshold =
+    best.shape === "line"
+      ? rawBox.diagonal < SHORT_LINE_MAX_DIAGONAL
+        ? SHORT_LINE_CONFIDENCE_THRESHOLD
+        : LINE_CONFIDENCE_THRESHOLD
+      : best.shape === "triangle"
+        ? 0.7
+        : 0.72;
 
   if (best.confidence < threshold) {
     return { shape: null, confidence: best.confidence };
