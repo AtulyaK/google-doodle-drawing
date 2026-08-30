@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>One Euro filter conformance checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; }
+    </style>
+  </head>
+  <body>
+    <h1>One Euro filter conformance checks</h1>
+    <p id="summary">Running…</p>
+    <div id="results"></div>
+    <script type="module">
+      import { OneEuroFilter, VectorOneEuroFilter } from "../src/one-euro-filter.js";
+
+      const smoothingFactor = (cutoff, deltaSeconds) => {
+        const timeConstant = 1 / (2 * Math.PI * cutoff);
+        return 1 / (1 + timeConstant / deltaSeconds);
+      };
+
+      function createReferenceFilter({ minCutoff = 1.2, beta = 0.04, derivativeCutoff = 1 } = {}) {
+        let previousFiltered = null;
+        let previousDerivative = null;
+        let previousTime = null;
+
+        return (value, timestamp) => {
+          const time = timestamp / 1000;
+          if (previousTime === null || time <= previousTime) {
+            previousFiltered = value;
+            previousDerivative = 0;
+            previousTime = time;
+            return value;
+          }
+
+          const deltaSeconds = Math.max(time - previousTime, 0.001);
+          const derivative = (value - previousFiltered) / deltaSeconds;
+          const derivativeAlpha = smoothingFactor(derivativeCutoff, deltaSeconds);
+          previousDerivative =
+            derivativeAlpha * derivative + (1 - derivativeAlpha) * previousDerivative;
+          const cutoff = minCutoff + beta * Math.abs(previousDerivative);
+          const valueAlpha = smoothingFactor(cutoff, deltaSeconds);
+          previousFiltered = valueAlpha * value + (1 - valueAlpha) * previousFiltered;
+          previousTime = time;
+          return previousFiltered;
+        };
+      }
+
+      const nearlyEqual = (left, right) =>
+        Math.abs(left - right) <= Number.EPSILON * Math.max(1, Math.abs(left), Math.abs(right)) * 16;
+
+      const run = (samples, options) => {
+        const actualFilter = new OneEuroFilter(options);
+        const referenceFilter = createReferenceFilter(options);
+        return samples.map(({ value, timestamp }) => ({
+          value,
+          actual: actualFilter.filter(value, timestamp),
+          expected: referenceFilter(value, timestamp),
+        }));
+      };
+
+      const tests = [];
+      const check = (name, assertion) => {
+        try {
+          const passed = Boolean(assertion());
+          tests.push({ name, passed });
+        } catch (error) {
+          tests.push({ name, passed: false, error });
+        }
+      };
+
+      check("stationary input remains stationary", () => {
+        const outputs = run(
+          [0, 16, 33, 71, 120].map((timestamp) => ({ value: 37, timestamp })),
+          { minCutoff: 1, beta: 0.08 },
+        );
+        return outputs.every(({ actual, expected }) => actual === 37 && nearlyEqual(actual, expected));
+      });
+
+      check("a sudden jump follows the reference equations without overshoot", () => {
+        const outputs = run(
+          [
+            { value: 0, timestamp: 0 },
+            { value: 100, timestamp: 16 },
+            { value: 100, timestamp: 32 },
+            { value: 100, timestamp: 64 },
+          ],
+          { minCutoff: 1.1, beta: 0.08 },
+        );
+        return (
+          outputs.every(({ actual, expected }) => nearlyEqual(actual, expected)) &&
+          outputs[1].actual > outputs[0].actual &&
+          outputs[1].actual < outputs[1].value &&
+          outputs[2].actual > outputs[1].actual &&
+          outputs[3].actual <= outputs[3].value
+        );
+      });
+
+      check("fast direction changes conform to the filtered-derivative reference", () => {
+        const outputs = run(
+          [
+            { value: 0, timestamp: 0 },
+            { value: 120, timestamp: 16 },
+            { value: -100, timestamp: 32 },
+            { value: 90, timestamp: 48 },
+            { value: -80, timestamp: 64 },
+          ],
+          { minCutoff: 1.1, beta: 0.08, derivativeCutoff: 1 },
+        );
+        return outputs.every(({ value, actual, expected }, index) => {
+          if (!nearlyEqual(actual, expected)) {
+            return false;
+          }
+          if (index === 0) {
+            return actual === value;
+          }
+          const previous = outputs[index - 1].actual;
+          return actual >= Math.min(previous, value) && actual <= Math.max(previous, value);
+        });
+      });
+
+      check("adaptive cutoff has less lag than the minimum cutoff during fast motion", () => {
+        const samples = [
+          { value: 0, timestamp: 0 },
+          { value: 120, timestamp: 16 },
+        ];
+        const fixed = run(samples, { minCutoff: 1.1, beta: 0 });
+        const adaptive = run(samples, { minCutoff: 1.1, beta: 0.08 });
+        return (
+          nearlyEqual(adaptive[1].actual, adaptive[1].expected) &&
+          adaptive[1].actual > fixed[1].actual &&
+          adaptive[1].actual < samples[1].value
+        );
+      });
+
+      check("vector filtering preserves the scalar API behavior", () => {
+        const options = { minCutoff: 1.1, beta: 0.08 };
+        const vector = new VectorOneEuroFilter(options);
+        const x = new OneEuroFilter(options);
+        const y = new OneEuroFilter(options);
+        const samples = [
+          { point: { x: 0, y: 10 }, timestamp: 0 },
+          { point: { x: 100, y: -40 }, timestamp: 16 },
+          { point: { x: -30, y: 80 }, timestamp: 32 },
+        ];
+        return samples.every(({ point, timestamp }) => {
+          const actual = vector.filter(point, timestamp);
+          return (
+            nearlyEqual(actual.x, x.filter(point.x, timestamp)) &&
+            nearlyEqual(actual.y, y.filter(point.y, timestamp))
+          );
+        });
+      });
+
+      const passed = tests.filter((test) => test.passed).length;
+      const failed = tests.length - passed;
+      document.documentElement.dataset.passed = String(passed);
+      document.documentElement.dataset.failed = String(failed);
+      document.body.dataset.status = failed === 0 ? "passed" : "failed";
+      document.querySelector("#summary").textContent = `${passed} passed, ${failed} failed`;
+      document.querySelector("#results").innerHTML = tests
+        .map(({ name, passed: didPass, error }) =>
+          `<p class="${didPass ? "pass" : "fail"}">${didPass ? "PASS" : "FAIL"}: ${name}${error ? ` (${error.message})` : ""}</p>`,
+        )
+        .join("");
+
+      window.__oneEuroTestResults = tests;
+
+      if (failed > 0) {
+        throw new Error(`${failed} One Euro filter conformance check(s) failed.`);
+      }
+    </script>
+  </body>
+</html>

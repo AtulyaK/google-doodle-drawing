@@ -12,14 +12,12 @@ export class OneEuroFilter {
     this.minCutoff = minCutoff;
     this.beta = beta;
     this.derivativeCutoff = derivativeCutoff;
-    this.previousRaw = null;
     this.previousFiltered = null;
     this.previousDerivative = null;
     this.previousTime = null;
   }
 
   reset() {
-    this.previousRaw = null;
     this.previousFiltered = null;
     this.previousDerivative = null;
     this.previousTime = null;
@@ -28,7 +26,6 @@ export class OneEuroFilter {
   filter(value, timestamp) {
     const time = timestamp / 1000;
     if (this.previousTime === null || time <= this.previousTime) {
-      this.previousRaw = value;
       this.previousFiltered = value;
       this.previousDerivative = 0;
       this.previousTime = time;
@@ -36,14 +33,13 @@ export class OneEuroFilter {
     }
 
     const deltaSeconds = Math.max(time - this.previousTime, 0.001);
-    const derivative = (value - this.previousRaw) / deltaSeconds;
+    const derivative = (value - this.previousFiltered) / deltaSeconds;
     const derivativeAlpha = smoothingFactor(this.derivativeCutoff, deltaSeconds);
     const filteredDerivative = lowPass(this.previousDerivative, derivative, derivativeAlpha);
     const cutoff = this.minCutoff + this.beta * Math.abs(filteredDerivative);
     const valueAlpha = smoothingFactor(cutoff, deltaSeconds);
     const filteredValue = lowPass(this.previousFiltered, value, valueAlpha);
 
-    this.previousRaw = value;
     this.previousFiltered = filteredValue;
     this.previousDerivative = filteredDerivative;
     this.previousTime = time;
