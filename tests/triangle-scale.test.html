@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Triangle scale checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; }
+    </style>
+  </head>
+  <body>
+    <h1>Triangle scale checks</h1>
+    <p id="summary">Running...</p>
+    <div id="results"></div>
+    <script type="module">
+      import { recognizeStroke } from "../src/recognizer.js";
+
+      const interpolate = (start, end, count) =>
+        Array.from({ length: count }, (_, index) => {
+          const ratio = index / (count - 1);
+          return {
+            x: start.x + (end.x - start.x) * ratio,
+            y: start.y + (end.y - start.y) * ratio,
+          };
+        });
+
+      const triangle = (size, countPerSide) => {
+        const vertices = [
+          { x: 0, y: size },
+          { x: size / 2, y: 0 },
+          { x: size, y: size },
+        ];
+        const points = [];
+        for (let index = 0; index < vertices.length; index += 1) {
+          const segment = interpolate(
+            vertices[index],
+            vertices[(index + 1) % vertices.length],
+            countPerSide,
+          );
+          points.push(...(index === 0 ? segment : segment.slice(1)));
+        }
+        points.push({ ...vertices[0] });
+        return points;
+      };
+
+      const recognizedCases = [
+        [24, 5],
+        [20, 5],
+        [30, 5],
+        [36, 5],
+        [44, 5],
+        [56, 5],
+        [72, 5],
+        [44, 8],
+        [56, 8],
+      ];
+      const rejectedCases = [[16, 5]];
+      const results = [
+        ...recognizedCases.map(([size, countPerSide]) => {
+          const result = recognizeStroke(triangle(size, countPerSide));
+          return {
+            name: `triangle ${size}px, ${countPerSide} samples/side`,
+            passed: result.shape === "triangle",
+            result,
+          };
+        }),
+        ...rejectedCases.map(([size, countPerSide]) => {
+          const result = recognizeStroke(triangle(size, countPerSide));
+          return {
+            name: `tiny triangle ${size}px stays rejected`,
+            passed: result.shape === null,
+            result,
+          };
+        }),
+      ];
+      const passed = results.filter(({ passed: ok }) => ok).length;
+      const failed = results.length - passed;
+
+      document.querySelector("#results").innerHTML = results
+        .map(({ name, passed: ok, result }) =>
+          `<p class="${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}: ${name} (${result.shape ?? "rejected"}, confidence ${(result.confidence ?? 0).toFixed(2)})</p>`)
+        .join("");
+      document.querySelector("#summary").textContent = `${passed} passed, ${failed} failed`;
+      document.body.dataset.status = failed === 0 ? "passed" : "failed";
+      window.__triangleScaleResults = { passed, failed, results };
+
+      if (failed > 0) {
+        throw new Error(`${failed} triangle scale check(s) failed`);
+      }
+    </script>
+  </body>
+</html>

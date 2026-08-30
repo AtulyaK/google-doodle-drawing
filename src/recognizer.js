@@ -1,6 +1,6 @@
 const MIN_POINTS = 5;
 const RESAMPLE_COUNT = 64;
-const MIN_DIAGONAL = 30;
+const MIN_DIAGONAL = 24;
 const EPSILON = 1e-6;
 
 function distance(a, b) {
