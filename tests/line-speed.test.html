@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Line speed checks</title>
+    <title>Production flow checks</title>
     <style>
       body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
       .pass { color: #087f5b; }
@@ -19,10 +19,10 @@
     </script>
   </head>
   <body>
-    <h1>Line speed checks</h1>
+    <h1>Production flow checks</h1>
     <p>
-      Scope: production camera and Spacebar flow with five captured fingertip samples. The camera
-      and MediaPipe boundaries are stubbed.
+      Scope: production camera and Spacebar flow with short strokes and open-ended shape
+      identification. The camera and MediaPipe boundaries are stubbed.
     </p>
     <p id="summary">Running...</p>
     <div id="results"></div>
@@ -47,6 +47,7 @@
       <span data-shape-key="line"></span>
       <span data-shape-key="circle"></span>
       <span data-shape-key="triangle"></span>
+      <span data-shape-key="v"></span>
     </main>
 
     <script>
@@ -161,6 +162,47 @@
         name: "five-point short line submits through production flow",
         passed: score === "1",
         detail: `score=${score}, feedback=${document.querySelector("#feedbackTitle").textContent}`,
+      });
+      tests.push({
+        name: "identification mode does not present a target challenge",
+        passed:
+          document.querySelector("#challengeTitle").textContent === "Identify the shape" &&
+          document.querySelector("#targetPreview").getAttribute("aria-label") ===
+            "Supported shapes: line, circle, triangle, V",
+        detail: `title=${document.querySelector("#challengeTitle").textContent}`,
+      });
+
+      dispatchSpace("keydown");
+      const vVertices = [
+        { x: 0.26, y: 0.24 },
+        { x: 0.5, y: 0.78 },
+        { x: 0.74, y: 0.24 },
+      ];
+      let sampleIndex = 0;
+      for (let segment = 0; segment < vVertices.length - 1; segment += 1) {
+        const start = vVertices[segment];
+        const end = vVertices[segment + 1];
+        for (let step = 0; step <= 4; step += 1) {
+          if (segment > 0 && step === 0) {
+            continue;
+          }
+          const ratio = step / 4;
+          setFingertip(
+            start.x + (end.x - start.x) * ratio,
+            start.y + (end.y - start.y) * ratio,
+          );
+          video.currentTime = 20 + sampleIndex;
+          runFrame(300 + sampleIndex * 33);
+          sampleIndex += 1;
+        }
+      }
+      dispatchSpace("keyup");
+
+      const vScore = document.querySelector("#score").textContent;
+      tests.push({
+        name: "a recognized shape is accepted without matching a target order",
+        passed: vScore === "2" && document.querySelector("#feedbackTitle").textContent === "Shape identified",
+        detail: `score=${vScore}, feedback=${document.querySelector("#feedbackTitle").textContent}`,
       });
 
       const passed = tests.filter(({ passed: ok }) => ok).length;

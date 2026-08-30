@@ -26,7 +26,6 @@
       function createSpacebarCaptureModel(initialPhase = PHASE.READY) {
         const state = {
           phase: initialPhase,
-          complete: false,
           activeStroke: null,
           completedStrokes: [],
           boundaries: [],
@@ -43,9 +42,6 @@
               return false;
             }
             event.preventDefault();
-            if (state.complete) {
-              return false;
-            }
             if (state.phase === PHASE.SUBMITTED) {
               state.phase = PHASE.READY;
             }
@@ -223,18 +219,6 @@
         assert(model.state.boundaries.join() === "manual", "manual Finish was not the only boundary");
         assert(model.state.completedStrokes.length === 1, "manual Finish did not close exactly one stroke");
         assert(model.spaceHeld === false, "manual Finish left the clutch held");
-      });
-
-      test("a completed challenge cannot restart", (model) => {
-        model.state.complete = true;
-        key("keydown");
-        model.track({ x: 10, y: 20 });
-        key("keyup");
-
-        assert(model.state.starts === 0, "completed state restarted drawing");
-        assert(model.state.activeStroke === null, "completed state created capture state");
-        assert(model.state.cursor === null, "completed state created a cursor");
-        assert(model.state.boundaries.length === 0, "completed state finished a stroke");
       });
 
       test("Space starts a new stroke from SUBMITTED", (model) => {

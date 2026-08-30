@@ -14,8 +14,9 @@
           <p class="eyebrow">Camera-powered drawing practice</p>
           <h1>Doodle Motion</h1>
           <p class="hero-copy">
-            Start the camera, hold <kbd>Space</kbd> to draw with your index fingertip, and release
-            <kbd>Space</kbd> to submit. Movement after release is not added to your stroke.
+            Start the camera, hold <kbd>Space</kbd> to draw any supported shape with your index
+            fingertip, and release <kbd>Space</kbd> to identify it. Movement after release is not
+            added to your stroke.
           </p>
         </div>
         <div class="hero-badge" aria-label="On-device processing">
@@ -66,13 +67,17 @@
         <aside class="challenge-card">
           <div class="challenge-header">
             <div>
-              <p class="section-label">Current challenge</p>
-              <h2 id="challengeTitle">Draw a line</h2>
+              <p class="section-label">Shape identification</p>
+              <h2 id="challengeTitle">Identify the shape</h2>
             </div>
-            <div class="progress-pill"><span id="score">0</span> / 3</div>
+            <div class="progress-pill"><span id="score">0</span> identified</div>
           </div>
 
-          <div id="targetPreview" class="target-preview target-line" aria-label="Target shape: line">
+          <div
+            id="targetPreview"
+            class="target-preview target-identification"
+            aria-label="Supported shapes: line, circle, triangle, V"
+          >
             <svg
               class="target-artwork target-artwork-line"
               viewBox="0 0 240 160"
@@ -99,17 +104,28 @@
             >
               <path d="M120 34 184 126H56Z"></path>
             </svg>
+            <svg
+              class="target-artwork target-artwork-v"
+              viewBox="0 0 240 160"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M42 40 120 126 198 40"></path>
+            </svg>
           </div>
 
           <div class="feedback-panel" aria-live="polite">
             <p id="feedbackTitle">Ready when you are</p>
-            <p id="feedbackDetail">Start the camera, hold Space to draw, then release it to submit.</p>
+            <p id="feedbackDetail">
+              Draw any supported shape, then release Space to identify it.
+            </p>
           </div>
 
-          <div class="shape-key" aria-label="Shape challenge order">
-            <span class="shape-key-item is-active" data-shape-key="line">Line</span>
+          <div class="shape-key" aria-label="Supported shapes">
+            <span class="shape-key-item" data-shape-key="line">Line</span>
             <span class="shape-key-item" data-shape-key="circle">Circle</span>
             <span class="shape-key-item" data-shape-key="triangle">Triangle</span>
+            <span class="shape-key-item" data-shape-key="v">V</span>
           </div>
         </aside>
       </section>

@@ -6,7 +6,6 @@ import { createSpacebarClutch } from "./spacebar-clutch.js";
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
-const SHAPES = ["line", "circle", "triangle"];
 const SHAPE_LABELS = {
   line: "line",
   v: "V",
@@ -59,15 +58,9 @@ const state = {
   cursor: null,
   pauseSince: null,
   pointFilter: new VectorOneEuroFilter({ minCutoff: 1.1, beta: 0.08 }),
-  targetIndex: 0,
   score: 0,
-  complete: false,
   busy: false,
 };
-
-function currentShape() {
-  return SHAPES[state.targetIndex];
-}
 
 function setStatus(message, tone = "neutral") {
   elements.status.textContent = message;
@@ -179,15 +172,15 @@ function transitionToSubmitted(timestamp, tone = "success") {
 }
 
 function updateChallenge() {
-  const shape = currentShape();
-  elements.challengeTitle.textContent = state.complete ? "Challenge complete!" : `Draw a ${SHAPE_LABELS[shape]}`;
-  elements.targetPreview.className = `target-preview ${state.complete ? "target-complete" : `target-${shape}`}`;
-  elements.targetPreview.setAttribute("aria-label", state.complete ? "All shapes complete" : `Target shape: ${shape}`);
+  elements.challengeTitle.textContent = "Identify the shape";
+  elements.targetPreview.className = "target-preview target-identification";
+  elements.targetPreview.setAttribute(
+    "aria-label",
+    "Supported shapes: line, circle, triangle, V",
+  );
   elements.score.textContent = state.score;
   elements.shapeKeys.forEach((item) => {
-    const shapeIndex = SHAPES.indexOf(item.dataset.shapeKey);
-    item.classList.toggle("is-active", !state.complete && item.dataset.shapeKey === shape);
-    item.classList.toggle("is-complete", state.complete || shapeIndex < state.targetIndex);
+    item.classList.remove("is-active", "is-complete");
   });
 }
 
@@ -281,53 +274,33 @@ function resetStrokeLifecycle() {
 
 function submitStroke(timestamp) {
   const rawStroke = state.stroke.map((point) => ({ x: point.x, y: point.y }));
-  const requested = currentShape();
   let result = { shape: null, confidence: 0 };
 
   if (rawStroke.length >= MIN_STROKE_POINTS) {
     result = recognizeStroke(rawStroke);
   }
 
-  if (result.shape === requested) {
+  if (result.shape) {
     state.score += 1;
-    state.complete = state.targetIndex === SHAPES.length - 1;
     setFeedback(
-      state.complete ? "You nailed it!" : "Nice drawing!",
-      state.complete
-        ? "You completed all three shape challenges."
-        : `You drew a ${SHAPE_LABELS[result.shape]}. Move on to the next shape.`,
+      "Shape identified",
+      `I identified a ${detectedShapeLabel(result)}. Draw another supported shape whenever you're ready.`,
       "success",
     );
-    state.targetIndex = Math.min(state.targetIndex + 1, SHAPES.length - 1);
     updateChallenge();
-  } else if (result.shape) {
-    setFeedback(
-      "Almost there",
-      `I saw a ${detectedShapeLabel(result)}. Try tracing the ${SHAPE_LABELS[requested]} again.`,
-      "warning",
-    );
   } else {
     setFeedback(
       "Shape not clear yet",
-      "Try a larger stroke, keep your fingertip visible, and release Space only when you are finished.",
+      "Try a larger, clearer line, circle, triangle, or V, then release Space when you are finished.",
       "warning",
     );
   }
 
   clearStroke();
-  transitionToSubmitted(timestamp, result.shape === requested ? "success" : "warning");
+  transitionToSubmitted(timestamp, result.shape ? "success" : "warning");
 }
 
 function handleLandmarks(landmarks, timestamp) {
-  if (state.complete) {
-    const hadCursor = state.cursor !== null;
-    state.cursor = null;
-    if (hadCursor) {
-      redraw();
-    }
-    return;
-  }
-
   if (!spacebarClutch.held) {
     const hadCursor = state.cursor !== null;
     state.cursor = null;
@@ -379,13 +352,6 @@ function handleLandmarks(landmarks, timestamp) {
 function handleTrackingLoss(timestamp) {
   const hadCursor = state.cursor !== null;
   state.cursor = null;
-
-  if (state.complete) {
-    if (hadCursor) {
-      redraw();
-    }
-    return;
-  }
 
   if (state.phase === PHASE.DRAWING) {
     transitionToPaused(timestamp);
@@ -465,9 +431,6 @@ function canStartSpacebarStroke(event) {
   }
 
   event.preventDefault();
-  if (state.complete) {
-    return false;
-  }
   if (state.phase === PHASE.SUBMITTED) {
     transitionToReady(performance.now());
   }
@@ -531,7 +494,7 @@ async function startCamera() {
     transitionToReady(performance.now(), "Camera ready — hold Space to draw", "success");
     setFeedback(
       "Hold Space to draw",
-      `Hold Space while tracing a ${SHAPE_LABELS[currentShape()]} with your index fingertip, then release to submit.`,
+      "Hold Space while tracing any supported shape with your index fingertip, then release to identify it.",
       "neutral",
     );
     scheduleFrame();
@@ -565,13 +528,14 @@ function stopCamera() {
 }
 
 function resetGame() {
-  state.targetIndex = 0;
   state.score = 0;
-  state.complete = false;
   resetStrokeLifecycle();
   clearStroke();
   updateChallenge();
-  setFeedback("Ready when you are", "Start the camera, hold Space to draw, then release it to submit.");
+  setFeedback(
+    "Ready when you are",
+    "Start the camera, hold Space to draw any supported shape, then release it for identification.",
+  );
   if (state.stream) {
     transitionToReady(performance.now(), "Camera ready", "success");
   } else {

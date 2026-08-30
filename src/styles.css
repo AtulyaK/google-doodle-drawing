@@ -332,58 +332,47 @@ h2 {
   stroke-linejoin: round;
 }
 
-.target-line .target-artwork-line {
-  display: block;
-}
-
-.target-line .target-artwork-line line {
-  stroke-width: 12;
-}
-
-.target-line .target-artwork-line circle {
-  stroke-width: 0;
-}
-
-.target-circle .target-artwork-circle {
-  display: block;
-  width: min(54%, 150px);
-}
-
-.target-circle .target-artwork-circle circle {
-  fill: none;
-  stroke-width: 12;
-}
-
-.target-triangle .target-artwork-triangle {
-  display: block;
-  width: min(68%, 180px);
-}
-
-.target-triangle .target-artwork-triangle path {
-  stroke-width: 12;
-  fill: currentColor;
-}
-
 .target-preview .target-artwork * {
   vector-effect: non-scaling-stroke;
 }
 
-.target-complete .target-artwork {
-  display: none;
+.target-identification {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 16px;
 }
 
-.target-complete::after {
-  content: "✓";
-  display: grid;
-  width: 86px;
-  height: 86px;
-  place-items: center;
-  border: 3px solid var(--green);
-  border-radius: 50%;
-  color: var(--green);
-  font-size: 2.8rem;
-  font-weight: 800;
-  box-shadow: 0 0 26px rgba(52, 211, 153, 0.25);
+.target-identification .target-artwork {
+  display: block;
+  width: 100%;
+  max-width: 140px;
+  filter: none;
+}
+
+.target-identification .target-artwork-line line {
+  stroke-width: 12;
+}
+
+.target-identification .target-artwork-line circle {
+  stroke-width: 0;
+}
+
+.target-identification .target-artwork-circle {
+  max-width: 112px;
+}
+
+.target-identification .target-artwork-circle circle {
+  fill: none;
+  stroke-width: 12;
+}
+
+.target-identification .target-artwork-triangle path,
+.target-identification .target-artwork-v path {
+  stroke-width: 12;
+}
+
+.target-identification .target-artwork-v path {
+  fill: none;
 }
 
 .feedback-panel {
