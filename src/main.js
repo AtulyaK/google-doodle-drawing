@@ -26,7 +26,7 @@ const TRACKING_LOSS_GRACE_MS = 220;
 const BRIDGE_MAX_GAP_MS = 180;
 const BRIDGE_STEP_DISTANCE = 18;
 const MAX_BRIDGE_STEPS = 4;
-const MIN_STROKE_POINTS = 8;
+const MIN_STROKE_POINTS = 5;
 
 const elements = {
   stage: document.querySelector("#stage"),

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Line speed checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; }
+      #appFixture { position: fixed; left: -10000px; width: 320px; }
+      #stage { width: 320px; height: 200px; }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm": "data:text/javascript,export const FilesetResolver%3D%7BforVisionTasks:async()%3D%3E(%7B%7D)%7D%3Bexport const HandLandmarker%3D%7BcreateFromOptions:async()%3D%3Ewindow.__fakeHandLandmarker%7D%3B"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <h1>Line speed checks</h1>
+    <p>
+      Scope: production camera and Spacebar flow with five captured fingertip samples. The camera
+      and MediaPipe boundaries are stubbed.
+    </p>
+    <p id="summary">Running...</p>
+    <div id="results"></div>
+
+    <main id="appFixture" aria-hidden="true">
+      <p id="status">Camera is off</p>
+      <button id="startButton" type="button">Start camera</button>
+      <button id="finishButton" type="button" disabled>Finish stroke</button>
+      <button id="resetButton" type="button">Reset</button>
+      <div id="stage">
+        <video id="camera" muted></video>
+        <canvas id="drawingCanvas"></canvas>
+        <div id="stageMessage"></div>
+      </div>
+      <h2 id="challengeTitle"></h2>
+      <div id="targetPreview"></div>
+      <div class="feedback-panel">
+        <p id="feedbackTitle"></p>
+        <p id="feedbackDetail"></p>
+      </div>
+      <span id="score"></span>
+      <span data-shape-key="line"></span>
+      <span data-shape-key="circle"></span>
+      <span data-shape-key="triangle"></span>
+    </main>
+
+    <script>
+      const scheduledFrames = new Map();
+      let nextFrameId = 1;
+      let videoTime = 0;
+      let attachedStream = null;
+
+      window.requestAnimationFrame = (callback) => {
+        const id = nextFrameId++;
+        scheduledFrames.set(id, callback);
+        return id;
+      };
+      window.cancelAnimationFrame = (id) => scheduledFrames.delete(id);
+
+      const track = new EventTarget();
+      track.stop = () => {};
+      const stream = {
+        active: true,
+        getTracks: () => [track],
+        getVideoTracks: () => [track],
+      };
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getUserMedia: async () => stream },
+      });
+
+      const video = document.querySelector("#camera");
+      Object.defineProperties(video, {
+        readyState: { configurable: true, get: () => 4 },
+        videoWidth: { configurable: true, get: () => 640 },
+        videoHeight: { configurable: true, get: () => 360 },
+        srcObject: {
+          configurable: true,
+          get: () => attachedStream,
+          set: (value) => {
+            attachedStream = value;
+          },
+        },
+        currentTime: {
+          configurable: true,
+          get: () => videoTime,
+          set: (value) => {
+            videoTime = value;
+          },
+        },
+      });
+      video.play = async () => {};
+
+      const hand = Array.from({ length: 9 }, () => ({ x: 0.5, y: 0.5 }));
+      window.__fakeLandmarkResult = { landmarks: [[...hand]] };
+      window.__fakeHandLandmarker = {
+        detectForVideo: () => window.__fakeLandmarkResult,
+        close: () => {},
+      };
+    </script>
+
+    <script type="module">
+      const tests = [];
+      const assert = (condition, message) => {
+        if (!condition) {
+          throw new Error(message);
+        }
+      };
+      const waitFor = async (check, message) => {
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          if (check()) {
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        throw new Error(message);
+      };
+      const runFrame = (timestamp) => {
+        const entry = scheduledFrames.entries().next().value;
+        assert(entry, "no animation frame was scheduled");
+        const [id, callback] = entry;
+        scheduledFrames.delete(id);
+        callback(timestamp);
+      };
+      const dispatchSpace = (type) =>
+        window.dispatchEvent(new KeyboardEvent(type, {
+          code: "Space",
+          key: " ",
+          bubbles: true,
+          cancelable: true,
+        }));
+      const setFingertip = (x, y) => {
+        const landmarks = Array.from({ length: 9 }, () => ({ x: 0.5, y: 0.5 }));
+        landmarks[8] = { x, y };
+        window.__fakeLandmarkResult = { landmarks: [landmarks] };
+      };
+
+      await import("../src/main.js");
+      document.querySelector("#startButton").click();
+      await waitFor(
+        () => document.querySelector("#status").textContent === "Camera ready — hold Space to draw",
+        "camera did not reach ready state",
+      );
+
+      dispatchSpace("keydown");
+      for (let index = 0; index < 5; index += 1) {
+        const ratio = index / 4;
+        setFingertip(0.45 + ratio * 0.1, 0.5);
+        video.currentTime = index + 1;
+        runFrame(index * 33);
+      }
+      dispatchSpace("keyup");
+
+      const score = document.querySelector("#score").textContent;
+      tests.push({
+        name: "five-point short line submits through production flow",
+        passed: score === "1",
+        detail: `score=${score}, feedback=${document.querySelector("#feedbackTitle").textContent}`,
+      });
+
+      const passed = tests.filter(({ passed: ok }) => ok).length;
+      const failed = tests.length - passed;
+      document.querySelector("#results").innerHTML = tests
+        .map(({ name, passed: ok, detail }) =>
+          `<p class="${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}: ${name} (${detail})</p>`)
+        .join("");
+      document.querySelector("#summary").textContent = `${passed} passed, ${failed} failed`;
+      document.body.dataset.status = failed === 0 ? "passed" : "failed";
+      window.__lineSpeedResults = { passed, failed, tests };
+
+      if (failed > 0) {
+        throw new Error(`${failed} line speed check(s) failed`);
+      }
+    </script>
+  </body>
+</html>

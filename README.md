@@ -45,3 +45,5 @@ Open <http://localhost:5173/tests/recognizer.adversarial.test.html> for near-mis
 Open <http://localhost:5173/tests/one-euro.test.html> for filter conformance checks, and <http://localhost:5173/tests/one-euro-regression.test.html> for timestamp/reset regressions.
 
 Open <http://localhost:5173/tests/triangle-scale.test.html> for small and sparse triangle recognition checks.
+
+Open <http://localhost:5173/tests/line-speed.test.html> for short-line submission coverage through the production camera flow.
