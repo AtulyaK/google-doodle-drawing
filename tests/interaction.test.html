@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Interaction checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; }
+    </style>
+  </head>
+  <body>
+    <h1>Interaction checks</h1>
+    <div id="results"></div>
+    <script>
+      function createSpacebarCaptureModel(target = window) {
+        const state = {
+          spaceHeld: false,
+          activeStroke: null,
+          completedStrokes: [],
+          boundaries: [],
+          starts: 0,
+        };
+
+        const finishStroke = (boundary) => {
+          if (!state.spaceHeld) {
+            return;
+          }
+          state.spaceHeld = false;
+          state.completedStrokes.push(state.activeStroke);
+          state.activeStroke = null;
+          state.boundaries.push(boundary);
+        };
+
+        const handleKeyDown = (event) => {
+          if (event.code !== "Space" || event.repeat || state.spaceHeld) {
+            return;
+          }
+          event.preventDefault();
+          state.spaceHeld = true;
+          state.activeStroke = [];
+          state.starts += 1;
+        };
+
+        const handleKeyUp = (event) => {
+          if (event.code !== "Space") {
+            return;
+          }
+          event.preventDefault();
+          finishStroke("release");
+        };
+
+        const handleBlur = () => finishStroke("blur");
+
+        target.addEventListener("keydown", handleKeyDown);
+        target.addEventListener("keyup", handleKeyUp);
+        target.addEventListener("blur", handleBlur);
+
+        return {
+          state,
+          track(point) {
+            if (state.spaceHeld) {
+              state.activeStroke.push(point);
+            }
+          },
+          trackingLost() {
+            return state.spaceHeld;
+          },
+          destroy() {
+            target.removeEventListener("keydown", handleKeyDown);
+            target.removeEventListener("keyup", handleKeyUp);
+            target.removeEventListener("blur", handleBlur);
+          },
+        };
+      }
+
+      const key = (type, repeat = false) =>
+        window.dispatchEvent(new KeyboardEvent(type, {
+          code: "Space",
+          key: " ",
+          repeat,
+          bubbles: true,
+          cancelable: true,
+        }));
+
+      const tests = [];
+      const test = (name, check) => {
+        const model = createSpacebarCaptureModel();
+        try {
+          check(model);
+          tests.push({ name, passed: true });
+        } catch (error) {
+          tests.push({ name, passed: false, error });
+        } finally {
+          model.destroy();
+        }
+      };
+      const assert = (condition, message) => {
+        if (!condition) {
+          throw new Error(message);
+        }
+      };
+
+      test("fingertip samples are ignored while Space is not held", (model) => {
+        model.track({ x: 10, y: 20 });
+        assert(model.state.starts === 0, "capture started without Space");
+        assert(model.state.activeStroke === null, "an inactive sample created a stroke");
+        assert(model.state.completedStrokes.length === 0, "an inactive sample completed a stroke");
+      });
+
+      test("Space release closes one stroke and excludes later movement", (model) => {
+        key("keydown");
+        model.track({ x: 10, y: 20 });
+        key("keyup");
+        model.track({ x: 30, y: 40 });
+
+        assert(model.state.boundaries.join() === "release", "release was not recorded as the boundary");
+        assert(model.state.completedStrokes.length === 1, "release did not close exactly one stroke");
+        assert(model.state.completedStrokes[0].length === 1, "movement after release leaked into the stroke");
+      });
+
+      test("window blur closes the held stroke as an explicit boundary", (model) => {
+        key("keydown");
+        model.track({ x: 10, y: 20 });
+        window.dispatchEvent(new Event("blur"));
+        model.track({ x: 30, y: 40 });
+
+        assert(model.state.boundaries.join() === "blur", "blur was not recorded as the boundary");
+        assert(model.state.completedStrokes.length === 1, "blur did not close exactly one stroke");
+        assert(model.state.completedStrokes[0].length === 1, "movement after blur leaked into the stroke");
+      });
+
+      test("repeated Space keydown does not start a duplicate stroke", (model) => {
+        key("keydown");
+        model.track({ x: 10, y: 20 });
+        key("keydown", true);
+        model.track({ x: 30, y: 40 });
+        key("keyup");
+
+        assert(model.state.starts === 1, "key repeat started another stroke");
+        assert(model.state.completedStrokes.length === 1, "key repeat split the stroke");
+        assert(model.state.completedStrokes[0].length === 2, "key repeat discarded captured samples");
+      });
+
+      test("tracking loss cannot capture or start a stroke without Space", (model) => {
+        const wasDrawing = model.trackingLost();
+        model.track({ x: 10, y: 20 });
+
+        assert(wasDrawing === false, "tracking loss reported drawing without Space");
+        assert(model.state.starts === 0, "tracking loss started a stroke");
+        assert(model.state.activeStroke === null, "tracking loss created capture state");
+      });
+
+      const results = document.querySelector("#results");
+      results.innerHTML = tests
+        .map(({ name, passed, error }) =>
+          `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name}${error ? ` — ${error.message}` : ""}</p>`)
+        .join("");
+      document.body.dataset.status = tests.every(({ passed }) => passed) ? "passed" : "failed";
+      window.__interactionTestResults = tests;
+
+      if (tests.some(({ passed }) => !passed)) {
+        throw new Error("One or more interaction checks failed.");
+      }
+    </script>
+  </body>
+</html>

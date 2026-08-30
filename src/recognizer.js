@@ -1,4 +1,4 @@
-const MIN_POINTS = 8;
+const MIN_POINTS = 5;
 const RESAMPLE_COUNT = 64;
 const MIN_DIAGONAL = 30;
 const EPSILON = 1e-6;
@@ -324,21 +324,19 @@ function vConfidence(points, box) {
   const firstLeg = pathLength(points.slice(0, corner.index + 1));
   const secondLeg = pathLength(points.slice(corner.index));
   const legBalance = Math.min(firstLeg, secondLeg) / Math.max(firstLeg, secondLeg, EPSILON);
-  const cornerStrength = turnStrength(points[corner.index - 1], middle, points[corner.index + 1]);
+  const cornerStrength = turnStrength(start, middle, end);
   const openness = directDistance / totalLength;
   const cornerPosition = corner.index / (points.length - 1);
-  const legRise =
-    Math.min(Math.abs(middle.y - start.y), Math.abs(middle.y - end.y)) /
-    Math.max(box.height, 1);
+  const cornerDepth = perpendicularDistance(middle, start, end) / Math.max(box.diagonal, 1);
 
   if (
-    cornerStrength < 0.8 ||
+    cornerStrength < 1.65 ||
     legBalance < 0.45 ||
     openness < 0.4 ||
     openness > 0.9 ||
     cornerPosition < 0.25 ||
     cornerPosition > 0.75 ||
-    legRise < 0.2
+    cornerDepth < 0.2
   ) {
     return 0;
   }
@@ -348,7 +346,7 @@ function vConfidence(points, box) {
       legBalance * 0.25 +
       (1 - Math.abs(openness - 0.6) / 0.3) * 0.2 +
       (1 - Math.abs(cornerPosition - 0.5) / 0.25) * 0.1 +
-      Math.min(1, legRise) * 0.12,
+      Math.min(1, cornerDepth / 0.6) * 0.12,
     0,
     1,
   );
@@ -358,7 +356,7 @@ function closedMetrics(points, box) {
   const closure = distance(points[0], points[points.length - 1]) / Math.max(box.diagonal, 1);
   return {
     closure,
-    closed: closure <= 0.18,
+    closed: closure <= 0.24,
   };
 }
 
@@ -388,7 +386,7 @@ function circleConfidence(points, box) {
     radialConsistency * 0.42 +
       circularity * 0.32 +
       aspect * 0.16 +
-      (1 - Math.min(1, closure / 0.18)) * 0.1,
+      (1 - Math.min(1, closure / 0.24)) * 0.1,
     0,
     1,
   );
@@ -490,7 +488,7 @@ export function recognizeStroke(inputPoints) {
   ];
 
   const best = metrics.sort((a, b) => b.confidence - a.confidence)[0];
-  const threshold = best.shape === "line" ? 0.82 : 0.72;
+  const threshold = best.shape === "line" ? 0.78 : best.shape === "triangle" ? 0.7 : 0.72;
 
   if (best.confidence < threshold) {
     return { shape: null, confidence: best.confidence };

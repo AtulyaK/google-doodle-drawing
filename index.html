@@ -14,8 +14,8 @@
           <p class="eyebrow">Camera-powered drawing practice</p>
           <h1>Doodle Motion</h1>
           <p class="hero-copy">
-            Hold Space to draw with your index fingertip, then release Space to submit without
-            drawing a return line.
+            Start the camera, hold <kbd>Space</kbd> to draw with your index fingertip, and release
+            <kbd>Space</kbd> to submit. Movement after release is not added to your stroke.
           </p>
         </div>
         <div class="hero-badge" aria-label="On-device processing">
@@ -40,20 +40,27 @@
 
           <div class="stage" id="stage">
             <video id="camera" autoplay playsinline muted aria-label="Camera preview"></video>
-            <canvas id="drawingCanvas" aria-label="Finger drawing canvas"></canvas>
+            <canvas
+              id="drawingCanvas"
+              role="img"
+              aria-label="Finger drawing canvas"
+              aria-describedby="drawingGuide"
+            ></canvas>
             <div id="stageMessage" class="stage-message">
               <div class="camera-icon" aria-hidden="true">◉</div>
-              <strong>Allow camera access to begin</strong>
-              <span>Your camera feed stays in this browser tab.</span>
+              <strong>Start the camera and allow access</strong>
+              <span>Camera access requires localhost or HTTPS. Frames stay in this browser tab.</span>
             </div>
           </div>
 
-          <div class="gesture-hint">
-            <span class="hint-icon" aria-hidden="true">␠</span>
-            Hold <strong>Space</strong> while tracing to draw. Release it to submit.
-            Use <strong>Finish stroke</strong> if tracking slips or you prefer a button.
-            The release frame never enters the stroke.
-          </div>
+          <ol id="drawingGuide" class="drawing-guide" aria-label="Drawing controls">
+            <li><strong>Hold <kbd>Space</kbd></strong> and trace with your index fingertip.</li>
+            <li><strong>Release <kbd>Space</kbd></strong> to submit; the release frame is excluded.</li>
+            <li>
+              If tracking is lost, keep holding <kbd>Space</kbd> and return your hand to view, or
+              select <strong>Finish stroke</strong> to submit the points already captured.
+            </li>
+          </ol>
         </div>
 
         <aside class="challenge-card">

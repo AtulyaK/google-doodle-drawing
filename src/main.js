@@ -53,6 +53,7 @@ const state = {
   handLandmarker: null,
   animationFrame: null,
   lastVideoTime: -1,
+  lastFrameTimestamp: null,
   stroke: [],
   cursor: null,
   pauseSince: null,
@@ -271,6 +272,7 @@ function appendPoint(point, timestamp) {
 
 function resetStrokeLifecycle() {
   state.stroke = [];
+  state.cursor = null;
   state.pauseSince = null;
   state.spaceHeld = false;
   state.pointFilter.reset();
@@ -318,20 +320,27 @@ function submitStroke(timestamp) {
 
 function handleLandmarks(landmarks, timestamp) {
   if (state.complete) {
+    const hadCursor = state.cursor !== null;
     state.cursor = null;
-    redraw();
+    if (hadCursor) {
+      redraw();
+    }
     return;
   }
 
   if (!state.spaceHeld) {
+    const hadCursor = state.cursor !== null;
     state.cursor = null;
     if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
       clearStroke();
       transitionToReady(timestamp);
+      return;
     } else if (state.phase === PHASE.SUBMITTED) {
       transitionToReady(timestamp);
     }
-    redraw();
+    if (hadCursor) {
+      redraw();
+    }
     return;
   }
 
@@ -368,10 +377,13 @@ function handleLandmarks(landmarks, timestamp) {
 }
 
 function handleTrackingLoss(timestamp) {
+  const hadCursor = state.cursor !== null;
   state.cursor = null;
 
   if (state.complete) {
-    redraw();
+    if (hadCursor) {
+      redraw();
+    }
     return;
   }
 
@@ -381,18 +393,33 @@ function handleTrackingLoss(timestamp) {
     transitionToReady(timestamp);
   }
 
-  redraw();
+  if (hadCursor) {
+    redraw();
+  }
 }
 
-function processFrame() {
-  if (!state.handLandmarker || elements.video.readyState < 2) {
+function processFrame(frameTime) {
+  if (!state.handLandmarker) {
+    state.animationFrame = requestAnimationFrame(processFrame);
+    return;
+  }
+
+  const frameIsStale =
+    state.lastFrameTimestamp !== null &&
+    frameTime - state.lastFrameTimestamp > TRACKING_LOSS_GRACE_MS;
+
+  if (frameIsStale && (state.cursor || state.phase === PHASE.DRAWING)) {
+    handleTrackingLoss(frameTime);
+  }
+
+  if (elements.video.readyState < 2) {
     state.animationFrame = requestAnimationFrame(processFrame);
     return;
   }
 
   if (elements.video.currentTime !== state.lastVideoTime) {
     state.lastVideoTime = elements.video.currentTime;
-    const frameTime = performance.now();
+    state.lastFrameTimestamp = frameTime;
     const result = state.handLandmarker.detectForVideo(elements.video, frameTime);
     const landmarks = result.landmarks?.[0];
     if (landmarks) {
@@ -419,6 +446,7 @@ async function createHandLandmarker() {
 function finishStroke() {
   if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
     state.spaceHeld = false;
+    state.cursor = null;
     submitStroke(performance.now());
   }
 }
@@ -451,13 +479,14 @@ function handleSpaceKeyDown(event) {
 }
 
 function handleSpaceKeyUp(event) {
-  if (event.code !== "Space" || isTextEntryTarget(event.target)) {
+  if (event.code !== "Space") {
     return;
   }
 
   if (state.spaceHeld) {
     event.preventDefault();
     state.spaceHeld = false;
+    state.cursor = null;
     if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
       submitStroke(performance.now());
     }
@@ -467,10 +496,24 @@ function handleSpaceKeyUp(event) {
 function finishSpacebarStroke() {
   if (state.spaceHeld) {
     state.spaceHeld = false;
+    state.cursor = null;
     if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
       submitStroke(performance.now());
     }
   }
+}
+
+function handleCameraEnded() {
+  if (!state.stream) {
+    return;
+  }
+
+  stopCamera();
+  elements.stageMessage.classList.remove("is-hidden");
+  elements.startButton.textContent = "Start camera";
+  elements.startButton.disabled = false;
+  setStatus("Camera disconnected", "error");
+  setFeedback("Camera connection ended", "Reconnect the camera to keep drawing.", "error");
 }
 
 async function startCamera() {
@@ -490,14 +533,23 @@ async function startCamera() {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("This browser does not provide camera access.");
     }
-    state.stream = await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
     });
-    elements.video.srcObject = state.stream;
+    state.stream = stream;
+    stream.getVideoTracks().forEach((track) => {
+      track.addEventListener("ended", handleCameraEnded, { once: true });
+    });
+    elements.video.srcObject = stream;
     await elements.video.play();
     resizeCanvas();
-    state.handLandmarker = await createHandLandmarker();
+    const handLandmarker = await createHandLandmarker();
+    if (state.stream !== stream || !stream.active) {
+      handLandmarker.close();
+      throw new Error("The camera connection ended before hand tracking was ready.");
+    }
+    state.handLandmarker = handLandmarker;
     transitionToReady(performance.now(), "Camera ready — hold Space to draw", "success");
     setFeedback(
       "Hold Space to draw",
@@ -528,6 +580,7 @@ function stopCamera() {
   state.handLandmarker?.close();
   state.handLandmarker = null;
   state.lastVideoTime = -1;
+  state.lastFrameTimestamp = null;
   resetStrokeLifecycle();
   transitionToIdle(performance.now());
   redraw();
@@ -554,6 +607,7 @@ elements.resetButton.addEventListener("click", resetGame);
 window.addEventListener("keydown", handleSpaceKeyDown);
 window.addEventListener("keyup", handleSpaceKeyUp);
 window.addEventListener("blur", finishSpacebarStroke);
+window.addEventListener("pagehide", stopCamera);
 window.addEventListener("resize", resizeCanvas);
 
 updateChallenge();
