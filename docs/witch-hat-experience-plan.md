@@ -8,7 +8,7 @@
 
 *Glyph Garden* is a short, browser-based drawing game in which a player traces original alchemy glyphs to bring small imagined objects to life. A camera can turn the player's index fingertip into a pen, while pointer and keyboard modes make the same game playable without a camera.
 
-The game should feel like practicing a beautiful craft, not passing a handwriting exam: the virtual stencil gives structure, but forgiving geometry and expressive feedback reward a clear intent.
+The game should feel like practicing a beautiful craft, not passing a handwriting exam: the virtual stencil gives structure, but forgiving geometry and expressive feedback reward a clear intent. Every sigil should also explain its meaning so completion feels like discovery rather than a score event.
 
 ## What exists now vs. what is proposed
 
@@ -79,9 +79,9 @@ Orientation, scale, order, and combination—not the primitive alone—give a re
 - A glyph contains **1–4 ordered components**; each component is one stroke.
 - The player finishes each stroke with Space release, a pointer/touch release, Enter, or the on-screen **Finish stroke** action.
 - The current component is validated before advancing. A failed component keeps the earlier components and offers a focused retry.
-- A glyph completes only when every component is accepted in order and within the stencil's broad placement/orientation tolerance.
+- A glyph completes automatically when every component is accepted in order and within the stencil's broad placement/orientation tolerance.
 - Repeated components are allowed when the recipe makes their order or orientation distinct.
-- A later symbol-level **Finish glyph** action should validate the captured component set together, while preserving the current Spacebar stroke boundary.
+- The final accepted stroke validates the captured component set together; the basic flow does not add a separate symbol-level finish button.
 
 ## Feedback and reward
 
@@ -91,7 +91,7 @@ Orientation, scale, order, and combination—not the primitive alone—give a re
 - Valid components brighten, pulse once, and remain visible as the player's work.
 - A near miss shows a specific, non-judgmental hint such as “make the loop larger” or “try the fork's two legs.”
 - Tracking loss pauses rather than silently failing; the player can reacquire the hand or finish the captured stroke.
-- Successful glyph completion uses a short original visual transformation and an optional generated tone. Audio is never required to understand success.
+- Successful glyph completion uses a short original visual transformation and an optional generated tone. A glyph may also have an original ambient bed, such as a quiet creek-like texture; audio is never required to understand success.
 
 ### Rewards
 
@@ -184,7 +184,7 @@ Resolve the open questions below, approve the original art direction, and define
 
 ### Stage 1 — Tracer bullet
 
-Turn the README's ring-plus-chevron direction into one original two-stroke recipe with a normalized stencil, ordered progress, and a symbol-level finish action. **Exit measure:** at least 8 of 10 first-time playtesters complete it within three attempts using camera or pointer input.
+Turn the README's ring-plus-chevron direction into one original two-stroke recipe with a normalized stencil, ordered progress, automatic completion, and a visible meaning. **Exit measure:** at least 8 of 10 first-time playtesters complete it within three attempts using camera or pointer input.
 
 ### Stage 2 — Playable lesson set
 

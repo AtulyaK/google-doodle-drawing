@@ -1,4 +1,5 @@
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm";
+import { createAmbientAudio } from "./ambient-audio.js";
 import { VectorOneEuroFilter } from "./one-euro-filter.js";
 import { createCaptureSession } from "./capture-session.js";
 import { createSpacebarClutch } from "./spacebar-clutch.js";
@@ -31,9 +32,10 @@ const elements = {
   status: document.querySelector("#status"),
   startButton: document.querySelector("#startButton"),
   finishButton: document.querySelector("#finishButton"),
-  finishSigilButton: document.querySelector("#finishSigilButton"),
+  audioButton: document.querySelector("#audioButton"),
   resetButton: document.querySelector("#resetButton"),
   challengeTitle: document.querySelector("#challengeTitle"),
+  challengeMeaning: document.querySelector("#challengeMeaning"),
   targetPreview: document.querySelector("#targetPreview"),
   feedbackTitle: document.querySelector("#feedbackTitle"),
   feedbackDetail: document.querySelector("#feedbackDetail"),
@@ -44,6 +46,7 @@ const elements = {
 
 const context = elements.canvas.getContext("2d");
 const captureSession = createCaptureSession(FIRST_BINDING.strokes.length);
+const ambientAudio = createAmbientAudio();
 const state = {
   phase: PHASE.IDLE,
   phaseSince: 0,
@@ -88,8 +91,6 @@ function updateFinishButton() {
     state.stroke.length >= MIN_STROKE_POINTS &&
     [PHASE.DRAWING, PHASE.PAUSED].includes(state.phase);
   elements.finishButton.disabled = !canFinish;
-  elements.finishSigilButton.disabled =
-    state.committedStrokes.length !== FIRST_BINDING.strokes.length || state.sigilCompleted;
 }
 
 function currentStrokeTemplate() {
@@ -102,7 +103,7 @@ function currentStrokeLabel() {
 
 function readyStatusMessage() {
   return state.committedStrokes.length === FIRST_BINDING.strokes.length
-    ? "Both strokes are ready — select Finish sigil."
+    ? "Both strokes are ready — the sigil will finish automatically."
     : `Press and hold Space to draw the ${currentStrokeLabel()}.`;
 }
 
@@ -207,7 +208,9 @@ function updateChallenge() {
     "aria-label",
     "First Binding sigil: a vessel ring followed by a pointed apex",
   );
+  elements.targetPreview.classList.toggle("is-awakened", state.sigilCompleted);
   elements.score.textContent = state.score;
+  elements.challengeMeaning.textContent = FIRST_BINDING.meaning;
   elements.progressItems.forEach((item, index) => {
     item.classList.toggle("is-complete", index < state.committedStrokes.length);
     item.classList.toggle(
@@ -242,7 +245,7 @@ function canvasPoint(point) {
   };
 }
 
-function drawPath(points, { color, width, dash = [], glow = false }) {
+function drawPath(points, { color, width, dash = [], glow = false, glowColor = color }) {
   if (points.length < 2) {
     return;
   }
@@ -253,7 +256,7 @@ function drawPath(points, { color, width, dash = [], glow = false }) {
   context.strokeStyle = color;
   context.setLineDash(dash);
   if (glow) {
-    context.shadowColor = "rgba(249, 115, 22, 0.35)";
+    context.shadowColor = glowColor;
     context.shadowBlur = 12;
   }
   context.beginPath();
@@ -277,12 +280,14 @@ function drawStencil(rect) {
     const isCurrent = index === state.committedStrokes.length && !state.sigilCompleted;
     drawPath(points, {
       color: isComplete
-        ? "rgba(52, 211, 153, 0.28)"
+        ? "rgba(52, 211, 153, 0.72)"
         : isCurrent
-          ? "rgba(196, 181, 253, 0.72)"
-          : "rgba(148, 163, 184, 0.2)",
-      width: isCurrent ? 3 : 2,
+          ? "rgba(250, 204, 21, 0.96)"
+          : "rgba(96, 165, 250, 0.58)",
+      width: isCurrent ? 5 : 3,
       dash: isComplete ? [] : [7, 9],
+      glow: isCurrent,
+      glowColor: "rgba(250, 204, 21, 0.65)",
     });
   });
 }
@@ -385,17 +390,22 @@ function submitStroke(timestamp, finishReason = "release") {
     syncCaptureState();
     const completedAllStrokes =
       state.committedStrokes.length === FIRST_BINDING.strokes.length;
+    if (completedAllStrokes) {
+      state.cursor = null;
+      state.pauseSince = null;
+      state.pointFilter.reset();
+      completeSigil(timestamp);
+      return;
+    }
     setFeedback(
       `${template.label} inscribed`,
-      completedAllStrokes
-        ? "Both strokes are ready. Select Finish sigil to awaken the mark."
-        : `Good start. Now trace the ${currentStrokeLabel()} and release Space when you are ready.`,
+      `Good start. Now trace the ${currentStrokeLabel()} and release Space when you are ready.`,
       "success",
     );
     updateChallenge();
     transitionToSubmitted(
       timestamp,
-      completedAllStrokes ? "Both strokes ready" : `${template.label} inscribed`,
+      `${template.label} inscribed`,
       "success",
     );
   } else {
@@ -426,7 +436,7 @@ function resetAttempt() {
   redraw();
 }
 
-function finishSigil() {
+function completeSigil(timestamp = performance.now()) {
   if (
     state.committedStrokes.length !== FIRST_BINDING.strokes.length ||
     state.sigilCompleted ||
@@ -439,13 +449,14 @@ function finishSigil() {
   if (result.matched) {
     state.score += 1;
     state.sigilCompleted = true;
+    ambientAudio.playSigilComplete();
     setFeedback(
       "Sigil awakened",
-      "The First Binding is complete. Press Space to draw it again or Reset to clear the score.",
+      `${FIRST_BINDING.meaning} Press Space to draw it again or Reset to clear the score.`,
       "success",
     );
     updateChallenge();
-    transitionToSubmitted(performance.now(), "Sigil awakened", "success");
+    transitionToSubmitted(timestamp, "Sigil awakened", "success");
     redraw();
     return;
   }
@@ -456,7 +467,7 @@ function finishSigil() {
     "The pieces were clear, but their placement drifted apart. Start again and keep the apex inside the vessel.",
     "warning",
   );
-  transitionToSubmitted(performance.now(), "Sigil needs another try", "warning");
+  transitionToSubmitted(timestamp, "Sigil needs another try", "warning");
 }
 
 function handleLandmarks(landmarks, timestamp) {
@@ -594,7 +605,7 @@ function canStartSpacebarStroke(event) {
   event.preventDefault();
   if (state.committedStrokes.length >= FIRST_BINDING.strokes.length) {
     if (!state.sigilCompleted) {
-      setStatus("Both strokes are ready — select Finish sigil.", "success");
+      setStatus("The sigil is finishing — try again in a moment.", "success");
       return false;
     }
     resetAttempt();
@@ -706,13 +717,36 @@ function resetGame() {
   updateChallenge();
   setFeedback(
     "Ready when you are",
-    "Start the camera, trace both stencil strokes, then select Finish sigil.",
+    "Start the camera, trace both stencil strokes, and release Space after each one.",
   );
   if (state.stream) {
     transitionToReady(performance.now(), "Camera ready", "success");
   } else {
     transitionToIdle(performance.now());
   }
+  redraw();
+}
+
+function updateAudioButton() {
+  if (!elements.audioButton) {
+    return;
+  }
+  if (!ambientAudio.available) {
+    elements.audioButton.disabled = true;
+    elements.audioButton.textContent = "Audio unavailable";
+    elements.audioButton.setAttribute("aria-pressed", "false");
+    return;
+  }
+
+  elements.audioButton.disabled = false;
+  elements.audioButton.textContent = ambientAudio.enabled ? "Mute ambience" : "Enable ambience";
+  elements.audioButton.setAttribute("aria-pressed", String(ambientAudio.enabled));
+  elements.audioButton.classList.toggle("is-active", ambientAudio.enabled);
+}
+
+function toggleAudio() {
+  ambientAudio.toggle();
+  updateAudioButton();
 }
 
 const spacebarClutch = createSpacebarClutch({
@@ -724,10 +758,14 @@ const spacebarClutch = createSpacebarClutch({
 
 elements.startButton.addEventListener("click", startCamera);
 elements.finishButton?.addEventListener("click", finishStroke);
-elements.finishSigilButton?.addEventListener("click", finishSigil);
+elements.audioButton?.addEventListener("click", toggleAudio);
 elements.resetButton.addEventListener("click", resetGame);
-window.addEventListener("pagehide", stopCamera);
+window.addEventListener("pagehide", () => {
+  stopCamera();
+  ambientAudio.stop();
+});
 window.addEventListener("resize", resizeCanvas);
 
 updateChallenge();
+updateAudioButton();
 resizeCanvas();

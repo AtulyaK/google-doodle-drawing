@@ -21,7 +21,8 @@ The product idea is a short guided ritual:
 1. The camera shows the player's mirrored hand and a faint original sigil stencil.
 2. The player holds Space while tracing one stroke.
 3. Releasing Space commits that stroke and advances the stencil.
-4. A complete sigil produces a restrained glow and optional generated tone.
+4. A complete sigil reveals its meaning, produces a restrained glow, and can play
+   an optional generated cue over a procedural ambient bed.
 5. A miss explains what to retry without storing the drawing or camera feed.
 
 The first content slice should be one two-stroke **ring plus chevron** sigil. It is
@@ -33,8 +34,8 @@ required by this architecture.
 Open product questions:
 
 - Is the first sigil orientation-locked, or may the player rotate it?
-- Should the last stroke auto-submit, or should the player explicitly choose
-  **Finish sigil**?
+- The last accepted stroke should auto-submit the composition; no separate
+  **Finish sigil** button is planned for the basic flow.
 - Should a failed stroke reset the whole attempt, or allow replacing only the failed
   stroke?
 - Is a non-camera keyboard/pointer practice mode a launch requirement?
@@ -55,7 +56,8 @@ The current app is a static page with browser-native ES modules and no build ste
 | State | `idle`, `ready`, `drawing`, `paused`, `submitted` in `src/main.js` |
 | Recognition | Pure deterministic heuristics for line, V, circle, and triangle in `src/recognizer.js` |
 | Recognition preparation | finite-point sanitization, near-duplicate collapse, 64-point resampling, simplification, geometry metrics |
-| Rendering | One canvas over the video for the orange live stroke and cursor; SVG previews in the challenge card |
+| Rendering | One canvas over the video for the colored stencil, live stroke, committed strokes, and cursor; SVG previews in the challenge card |
+| Meaning and audio | First Binding meaning in template data; optional procedural ambience and completion cue in `src/ambient-audio.js` |
 | Privacy | Camera frames and inference stay in the tab; tracks stop on page hide/disconnect; no app persistence |
 | Verification | Browser fixtures cover recognizer geometry, adversarial cases, Space boundaries, camera lifecycle, filter equations/regressions, short lines, and sparse triangles |
 
@@ -157,6 +159,7 @@ The exact points, name, and style are proposed content and need product/art revi
 Template metadata should include:
 
 - stable `id` and incrementing `version`;
+- a short player-facing `meaning`;
 - stroke order, closure, direction, and semantic role;
 - normalized points plus precomputed path length and bounding box;
 - matching policy (strict order, placement preservation, rotation policy);
@@ -197,7 +200,7 @@ paused
   └─ Finish current stroke ─> stroke-committed
 stroke-committed
   ├─ more strokes expected ─> ready-for-next-stroke
-  └─ Finish sigil ─> matching
+  └─ final stroke committed ─> matching
 matching
   ├─ pass ─> success
   └─ fail ─> retry
@@ -221,8 +224,9 @@ For a multi-stroke sigil:
 1. Release (or manual finish) commits the active stroke to the attempt.
 2. The attempt retains committed strokes and prompts for the next ordered stroke.
 3. A second Space hold starts a new stroke; it never silently appends to the prior one.
-4. **Finish sigil** validates the composition. A failed composition can reset the
-   attempt, unless product review chooses per-stroke replacement.
+4. The final accepted stroke validates the composition automatically. A failed
+   composition can reset the attempt, unless product review chooses per-stroke
+   replacement.
 
 This intentionally does not segment multiple strokes from a single Space hold. The
 camera cannot reliably distinguish a deliberate pen lift from a tracking pause.
@@ -307,14 +311,16 @@ Rendering rules:
 `effects.js` should consume semantic events, not matcher internals:
 
 - `strokeCommitted`: small progress accent;
-- `matched`: CSS glow/pulse and optional short oscillator tone;
+- `matched`: meaning announcement, CSS glow/pulse, and optional short oscillator cue;
 - `rejected`: restrained shake/fade only when reduced motion is not requested;
 - camera/tracking failure: no celebratory effects.
 
 Use Web Audio only after a user gesture, create no remote audio asset, and expose a
-mute control. Respect `prefers-reduced-motion`; audio preference is independent of
-motion preference. The effect sink must tolerate AudioContext creation being blocked
-or unavailable and must never turn a successful match into an error.
+mute control. The ambience can combine filtered generated noise with a quiet
+procedural note bed; completion uses a short original cue. Respect
+`prefers-reduced-motion`; audio preference is independent of motion preference. The
+effect sink must tolerate AudioContext creation being blocked or unavailable and
+must never turn a successful match into an error.
 
 ## 8. Accessibility and privacy
 
@@ -323,7 +329,8 @@ or unavailable and must never turn a successful match into an error.
 Implemented controls already have buttons, focus-visible styling, status text, and
 an `aria-live` feedback panel. The proposed flow should add:
 
-- a clearly named **Finish current stroke** and **Finish sigil** action;
+- a clearly named **Finish current stroke** action; composition completion is
+  announced automatically;
 - an ordered progress list whose text mirrors the stencil state;
 - announcements such as “Stroke 1 of 2 captured” and “Sigil not recognized”;
 - a visible non-color distinction for active, complete, paused, and rejected states;
@@ -375,6 +382,7 @@ only for new pure seams:
 | --- | --- |
 | `sigil-matcher.test.html` | Original ring/chevron positives under translation, scale, jitter, and permitted direction; near-miss and ambiguity negatives |
 | `capture-session.test.html` | Ordered multi-stroke boundaries, pause/recovery, finish actions, reset, and no post-release leakage |
+| `ambient-audio.test.html` | Optional Web Audio availability, ambience toggling, cleanup, and completion cue |
 | `stencil-model.test.html` | Expected layer commands/progress semantics, independent of canvas pixels |
 | `effects.test.html` | CSS event names, reduced-motion behavior, fake AudioContext/mute handling |
 | `template-data.test.html` | Unit-square bounds, unique IDs/versions, declared order, and original-content metadata |
@@ -423,7 +431,8 @@ count/closure before considering a more complex recognizer.
    matcher diagnostics, and deterministic positive/negative fixtures. Run it behind
    an explicit mode or local flag; do not replace the four-shape baseline yet.
 3. **Guided stencil UI.** Add ordered progress, stencil rendering, current-stroke
-   finish semantics, and symbol-level Finish sigil while preserving Space behavior.
+   finish semantics, and automatic symbol completion while preserving Space
+   behavior.
 4. **Semantic effects and accessibility polish.** Add CSS pulse, optional generated
    tone, mute/reduced-motion behavior, progress announcements, and failure copy.
 5. **Content expansion only after measurement.** Add more original templates from the
@@ -446,7 +455,7 @@ deterministically testable.
 | One canvas with conceptual layers | Minimal DOM and migration risk | More redraw work | Start here; split only after profiling |
 | Generated tone over audio asset | No asset licensing or network dependency | Browser audio policy and less musical richness | Optional short tone |
 | No persistence | Strong privacy and simple lifecycle | No progress history or personalization | Keep for first version |
-| Explicit Finish sigil | Prevents accidental early composition submission | Adds one control and one decision | Prefer for multi-stroke first slice |
+| Automatic final-stroke completion | Keeps the ritual flowing and removes a redundant control | A poor composition needs a clear retry state | Choose for the basic slice |
 
 ## Critique checklist
 
@@ -455,10 +464,9 @@ Before implementation, confirm:
 1. The ring/chevron content is original and approved as the first sigil.
 2. Strict order and Space-release boundaries are acceptable.
 3. Orientation is locked for the first slice.
-4. Multi-stroke attempts use explicit **Finish sigil** rather than auto-submit.
+4. Multi-stroke attempts auto-complete after the final accepted stroke.
 5. A failed composition resets the attempt (or the replacement policy is specified).
 6. Generated audio is optional and muted independently from reduced motion.
 7. No persistence, telemetry, or remote frame processing is desired.
 8. The existing four-shape mode should remain available during migration or be
    replaced once the sigil slice is validated.
-

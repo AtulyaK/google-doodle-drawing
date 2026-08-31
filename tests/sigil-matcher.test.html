@@ -133,6 +133,13 @@
         assert(!result.matched && result.reason === "too-short", "short stroke was accepted");
       });
 
+      add("every sigil exposes an original meaning", () => {
+        assert(
+          typeof FIRST_BINDING.meaning === "string" && FIRST_BINDING.meaning.length > 0,
+          "First Binding has no meaning",
+        );
+      });
+
       results.innerHTML = tests
         .map(({ name, passed, error }) =>
           `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name}${error ? ` — ${error.message}` : ""}</p>`)

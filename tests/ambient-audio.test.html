@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ambient audio checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; }
+    </style>
+  </head>
+  <body>
+    <h1>Ambient audio checks</h1>
+    <div id="results"></div>
+    <script type="module">
+      import { createAmbientAudio } from "../src/ambient-audio.js";
+
+      class FakeParam {
+        setValueAtTime() {}
+        linearRampToValueAtTime() {}
+      }
+
+      class FakeNode {
+        constructor() {
+          this.gain = new FakeParam();
+          this.frequency = new FakeParam();
+          this.started = 0;
+          this.stopped = 0;
+        }
+        connect() {}
+        disconnect() {}
+        start() {
+          this.started += 1;
+        }
+        stop() {
+          this.stopped += 1;
+        }
+      }
+
+      class FakeAudioContext {
+        constructor() {
+          this.sampleRate = 1000;
+          this.currentTime = 0;
+          this.destination = {};
+          this.oscillators = [];
+          this.sources = [];
+        }
+        createGain() {
+          return new FakeNode();
+        }
+        createOscillator() {
+          const oscillator = new FakeNode();
+          this.oscillators.push(oscillator);
+          return oscillator;
+        }
+        createBiquadFilter() {
+          return new FakeNode();
+        }
+        createBuffer() {
+          return { getChannelData: () => new Float32Array(2000) };
+        }
+        createBufferSource() {
+          const source = new FakeNode();
+          this.sources.push(source);
+          return source;
+        }
+        resume() {
+          return Promise.resolve();
+        }
+        close() {
+          return Promise.resolve();
+        }
+      }
+
+      const results = document.querySelector("#results");
+      const tests = [];
+      const assert = (condition, message) => {
+        if (!condition) {
+          throw new Error(message);
+        }
+      };
+      const add = (name, check) => {
+        try {
+          check();
+          tests.push({ name, passed: true });
+        } catch (error) {
+          tests.push({ name, passed: false, error });
+        }
+      };
+
+      add("audio unavailable is reported without creating a context", () => {
+        const audio = createAmbientAudio({
+          AudioContextClass: null,
+          setTimeoutFn: () => 1,
+          clearTimeoutFn: () => {},
+        });
+        assert(!audio.available, "audio reported as available");
+        assert(!audio.start(), "unavailable audio started");
+        assert(!audio.enabled, "unavailable audio became enabled");
+      });
+
+      add("ambience can start, play a cue, and be muted", () => {
+        const audio = createAmbientAudio({
+          AudioContextClass: FakeAudioContext,
+          setTimeoutFn: () => 1,
+          clearTimeoutFn: () => {},
+        });
+        assert(audio.start(), "ambience did not start");
+        assert(audio.enabled, "ambience was not enabled");
+        audio.playSigilComplete();
+        audio.stop();
+        assert(!audio.enabled, "stop did not mute ambience");
+      });
+
+      add("toggle starts a fresh ambient bed after stopping", () => {
+        const audio = createAmbientAudio({
+          AudioContextClass: FakeAudioContext,
+          setTimeoutFn: () => 1,
+          clearTimeoutFn: () => {},
+        });
+        assert(audio.toggle(), "toggle did not enable ambience");
+        assert(!audio.toggle(), "toggle did not disable ambience");
+        assert(audio.toggle(), "toggle did not re-enable ambience");
+        audio.stop();
+      });
+
+      results.innerHTML = tests
+        .map(({ name, passed, error }) =>
+          `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name}${error ? ` — ${error.message}` : ""}</p>`)
+        .join("");
+      document.body.dataset.status = tests.every(({ passed }) => passed) ? "passed" : "failed";
+      window.__ambientAudioTestResults = tests;
+
+      if (tests.some(({ passed }) => !passed)) {
+        throw new Error("One or more ambient audio checks failed.");
+      }
+    </script>
+  </body>
+</html>

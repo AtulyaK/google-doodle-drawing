@@ -34,7 +34,7 @@
             <div class="toolbar-actions">
               <button id="startButton" class="button button-primary" type="button">Start camera</button>
               <button id="finishButton" class="button button-ghost" type="button" disabled>Finish stroke</button>
-              <button id="finishSigilButton" class="button button-ghost" type="button" disabled>Finish sigil</button>
+              <button id="audioButton" class="button button-ghost" type="button" aria-pressed="false">Enable ambience</button>
               <button id="resetButton" class="button button-ghost" type="button">Reset</button>
             </div>
           </div>
@@ -58,7 +58,7 @@
             <li><strong>Hold <kbd>Space</kbd></strong> and trace the highlighted stencil stroke.</li>
             <li><strong>Release <kbd>Space</kbd></strong> to inscribe that stroke; the release frame is excluded.</li>
             <li>
-              Finish both strokes, then select <strong>Finish sigil</strong> to awaken the mark.
+              Finish both strokes and the mark awakens automatically.
               If tracking is lost, keep holding <kbd>Space</kbd> or finish the points already captured.
             </li>
           </ol>
@@ -69,6 +69,9 @@
             <div>
               <p class="section-label">Original sigil</p>
               <h2 id="challengeTitle">First Binding</h2>
+              <p id="challengeMeaning" class="challenge-meaning">
+                A gentle seal that gathers scattered intention into one safe place.
+              </p>
             </div>
             <div class="progress-pill"><span id="score">0</span> completed</div>
           </div>
@@ -92,7 +95,7 @@
           <div class="feedback-panel" aria-live="polite">
             <p id="feedbackTitle">Ready when you are</p>
             <p id="feedbackDetail">
-              Trace the vessel ring first, then the apex, and finish the sigil when both are ready.
+              Trace the vessel ring first, then the apex. The sigil completes automatically.
             </p>
           </div>
 

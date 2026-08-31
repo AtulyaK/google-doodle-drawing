@@ -200,6 +200,12 @@ h1 {
   color: #cbd5e1;
 }
 
+.button-ghost.is-active {
+  border-color: rgba(196, 181, 253, 0.62);
+  background: rgba(196, 181, 253, 0.14);
+  color: #ddd6fe;
+}
+
 .stage {
   position: relative;
   aspect-ratio: 16 / 10;
@@ -294,6 +300,14 @@ h2 {
   letter-spacing: -0.04em;
 }
 
+.challenge-meaning {
+  max-width: 250px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .progress-pill {
   padding: 6px 10px;
   color: var(--orange-light);
@@ -311,6 +325,33 @@ h2 {
   border: 1px dashed rgba(148, 163, 184, 0.2);
   border-radius: 18px;
   background: rgba(15, 23, 42, 0.65);
+}
+
+.target-preview.is-awakened {
+  border-color: rgba(52, 211, 153, 0.58);
+  background: rgba(6, 78, 59, 0.3);
+  color: #a7f3d0;
+  animation: sigil-awaken 900ms ease-out;
+}
+
+.target-preview.is-awakened .target-artwork {
+  color: #a7f3d0;
+  filter: drop-shadow(0 0 22px rgba(52, 211, 153, 0.52));
+}
+
+@keyframes sigil-awaken {
+  0% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 18px rgba(52, 211, 153, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .target-preview.is-awakened {
+    animation: none;
+  }
 }
 
 .target-artwork {
