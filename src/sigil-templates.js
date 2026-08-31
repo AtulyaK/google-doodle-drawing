@@ -14,6 +14,7 @@ export const FIRST_BINDING = {
   id: "first-binding",
   version: 1,
   name: "First Binding",
+  element: "Water",
   meaning: "A gentle seal that gathers scattered intention into one safe place.",
   coordinateSpace: "unit-square",
   strokes: [

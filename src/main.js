@@ -23,11 +23,13 @@ const BRIDGE_MAX_GAP_MS = 180;
 const BRIDGE_STEP_DISTANCE = 18;
 const MAX_BRIDGE_STEPS = 4;
 const MIN_STROKE_POINTS = 5;
+const CELEBRATION_DURATION_MS = 3600;
 
 const elements = {
   stage: document.querySelector("#stage"),
   video: document.querySelector("#camera"),
   canvas: document.querySelector("#drawingCanvas"),
+  celebrationLayer: document.querySelector("#celebrationLayer"),
   stageMessage: document.querySelector("#stageMessage"),
   status: document.querySelector("#status"),
   startButton: document.querySelector("#startButton"),
@@ -35,6 +37,7 @@ const elements = {
   audioButton: document.querySelector("#audioButton"),
   resetButton: document.querySelector("#resetButton"),
   challengeTitle: document.querySelector("#challengeTitle"),
+  challengeElement: document.querySelector("#challengeElement"),
   challengeMeaning: document.querySelector("#challengeMeaning"),
   targetPreview: document.querySelector("#targetPreview"),
   feedbackTitle: document.querySelector("#feedbackTitle"),
@@ -62,6 +65,7 @@ const state = {
   pointFilter: new VectorOneEuroFilter({ minCutoff: 1.1, beta: 0.08 }),
   score: 0,
   sigilCompleted: false,
+  celebrationTimer: null,
   busy: false,
 };
 
@@ -206,10 +210,11 @@ function updateChallenge() {
   elements.targetPreview.className = "target-preview target-sigil";
   elements.targetPreview.setAttribute(
     "aria-label",
-    "First Binding sigil: a vessel ring followed by a pointed apex",
+    "First Binding water sigil: a vessel ring followed by a pointed apex",
   );
   elements.targetPreview.classList.toggle("is-awakened", state.sigilCompleted);
   elements.score.textContent = state.score;
+  elements.challengeElement.textContent = `Element: ${FIRST_BINDING.element}`;
   elements.challengeMeaning.textContent = FIRST_BINDING.meaning;
   elements.progressItems.forEach((item, index) => {
     item.classList.toggle("is-complete", index < state.committedStrokes.length);
@@ -228,6 +233,27 @@ function resizeCanvas() {
   elements.canvas.height = Math.max(1, Math.floor(rect.height * deviceScale));
   context.setTransform(deviceScale, 0, 0, deviceScale, 0, 0);
   redraw();
+}
+
+function hideCelebration() {
+  if (state.celebrationTimer !== null) {
+    window.clearTimeout(state.celebrationTimer);
+    state.celebrationTimer = null;
+  }
+  elements.celebrationLayer?.classList.remove("is-active");
+}
+
+function showWaterCelebration() {
+  if (!elements.celebrationLayer) {
+    return;
+  }
+  hideCelebration();
+  void elements.celebrationLayer.offsetWidth;
+  elements.celebrationLayer.classList.add("is-active");
+  state.celebrationTimer = window.setTimeout(() => {
+    elements.celebrationLayer.classList.remove("is-active");
+    state.celebrationTimer = null;
+  }, CELEBRATION_DURATION_MS);
 }
 
 function canvasPoint(point) {
@@ -357,6 +383,7 @@ function appendPoint(point, timestamp) {
 function resetStrokeLifecycle() {
   captureSession.dispatch({ type: "reset" });
   syncCaptureState();
+  hideCelebration();
   state.cursor = null;
   state.pauseSince = null;
   state.sigilCompleted = false;
@@ -428,6 +455,7 @@ function submitStroke(timestamp, finishReason = "release") {
 function resetAttempt() {
   captureSession.dispatch({ type: "reset" });
   syncCaptureState();
+  hideCelebration();
   state.cursor = null;
   state.pauseSince = null;
   state.sigilCompleted = false;
@@ -449,10 +477,11 @@ function completeSigil(timestamp = performance.now()) {
   if (result.matched) {
     state.score += 1;
     state.sigilCompleted = true;
+    showWaterCelebration();
     ambientAudio.playSigilComplete();
     setFeedback(
-      "Sigil awakened",
-      `${FIRST_BINDING.meaning} Press Space to draw it again or Reset to clear the score.`,
+      `${FIRST_BINDING.element} sigil awakened`,
+      `${FIRST_BINDING.name} represents ${FIRST_BINDING.element}. ${FIRST_BINDING.meaning} Press Space to draw it again or Reset to clear the score.`,
       "success",
     );
     updateChallenge();

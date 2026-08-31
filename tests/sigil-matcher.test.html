@@ -140,6 +140,10 @@
         );
       });
 
+      add("First Binding exposes its elemental affinity", () => {
+        assert(FIRST_BINDING.element === "Water", "First Binding is not marked as Water");
+      });
+
       results.innerHTML = tests
         .map(({ name, passed, error }) =>
           `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name}${error ? ` — ${error.message}` : ""}</p>`)

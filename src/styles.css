@@ -233,8 +233,128 @@ h1 {
   pointer-events: none;
 }
 
+.celebration-layer {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.celebration-layer.is-active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.water-celebration {
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.6));
+}
+
+.celebration-layer.is-active .water-celebration {
+  animation: water-sweep 3.6s ease-out both;
+}
+
+.celebration-caption {
+  position: absolute;
+  top: 16%;
+  left: 50%;
+  padding: 8px 14px;
+  border: 1px solid rgba(165, 243, 252, 0.45);
+  border-radius: 999px;
+  background: rgba(8, 47, 73, 0.72);
+  color: #cffafe;
+  font-size: clamp(0.72rem, 2vw, 0.9rem);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform: translateX(-50%);
+  opacity: 0;
+}
+
+.celebration-layer.is-active .celebration-caption {
+  animation: celebration-caption 3.6s ease-out both;
+}
+
+.water-stream {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 180 34;
+}
+
+.celebration-layer.is-active .water-stream {
+  animation: water-flow 900ms linear infinite;
+}
+
+.water-stream-back {
+  stroke-width: 18;
+  opacity: 0.58;
+}
+
+.water-stream-front {
+  stroke-width: 8;
+  opacity: 0.9;
+}
+
+.water-droplets {
+  opacity: 0.75;
+}
+
+.celebration-layer.is-active .water-droplets {
+  animation: water-droplets 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes water-sweep {
+  0% {
+    opacity: 0;
+    transform: translateX(-4%);
+  }
+  14% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 1;
+    transform: translateX(4%);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(8%);
+  }
+}
+
+@keyframes water-flow {
+  to {
+    stroke-dashoffset: -214;
+  }
+}
+
+@keyframes water-droplets {
+  to {
+    transform: translateY(12px);
+    opacity: 0.3;
+  }
+}
+
+@keyframes celebration-caption {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+  18%,
+  78% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 .stage-message {
   position: absolute;
+  z-index: 3;
   inset: 0;
   display: flex;
   align-items: center;
@@ -308,6 +428,15 @@ h2 {
   line-height: 1.45;
 }
 
+.challenge-element {
+  margin: 8px 0 0;
+  color: #67e8f9;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .progress-pill {
   padding: 6px 10px;
   color: var(--orange-light);
@@ -351,6 +480,22 @@ h2 {
 @media (prefers-reduced-motion: reduce) {
   .target-preview.is-awakened {
     animation: none;
+  }
+
+  .celebration-layer.is-active .water-celebration,
+  .water-stream,
+  .water-droplets {
+    animation: none;
+  }
+
+  .celebration-layer.is-active .water-celebration {
+    opacity: 1;
+  }
+
+  .celebration-layer.is-active .celebration-caption {
+    animation: none;
+    opacity: 1;
+    transform: translateX(-50%);
   }
 }
 

@@ -1,8 +1,8 @@
 # Browser Alchemy Stencil: Architecture Proposal
 
-**Status:** critique-ready proposal; no implementation is included here.  
+**Status:** critique-ready proposal with the First Binding MVP implemented.
 **Scope:** extend the existing Doodle Motion static ES-module app into an original,
-camera-powered alchemy-stencil experience.  
+camera-powered alchemy-stencil experience while keeping the MVP seams explicit.
 **Non-goal:** reproduce any protected characters, artwork, terminology, or story from
 another work. The visual direction may share a sense of hand-drawn wonder, but every
 sigil and effect must be original.
@@ -286,7 +286,8 @@ render model has explicit conceptual layers:
 2. **Stencil layer** — faint original template paths, inactive strokes muted.
 3. **Progress layer** — completed strokes, current expected stroke, labels or markers.
 4. **Live input layer** — filtered captured points and cursor.
-5. **Feedback layer** — transient glow/pulse or rejection treatment.
+5. **Feedback layer** — transient glow/pulse, water-stream celebration, or rejection
+   treatment.
 6. **DOM accessibility layer** — status text, instructions, progress list, and
    controls that do not depend on pixels.
 
@@ -303,6 +304,8 @@ Rendering rules:
   retry message.
 - Use CSS classes for short state pulses rather than rendering a permanent
   screenshot or storing the user's path.
+- Keep the Water celebration in a separate DOM/SVG layer above the canvas so it can
+  animate and clear without mutating captured strokes.
 - Cap device-pixel-ratio backing dimensions to avoid oversized canvases on dense
   displays.
 
@@ -311,13 +314,14 @@ Rendering rules:
 `effects.js` should consume semantic events, not matcher internals:
 
 - `strokeCommitted`: small progress accent;
-- `matched`: meaning announcement, CSS glow/pulse, and optional short oscillator cue;
+- `matched`: meaning announcement, CSS glow/pulse, short water-stream animation,
+  and optional short oscillator cue;
 - `rejected`: restrained shake/fade only when reduced motion is not requested;
 - camera/tracking failure: no celebratory effects.
 
 Use Web Audio only after a user gesture, create no remote audio asset, and expose a
-mute control. The ambience can combine filtered generated noise with a quiet
-procedural note bed; completion uses a short original cue. Respect
+mute control. The current bed uses a low D/A drone and a minor-mode plucked
+motif; completion uses a short original D-minor cue. Respect
 `prefers-reduced-motion`; audio preference is independent of motion preference. The
 effect sink must tolerate AudioContext creation being blocked or unavailable and
 must never turn a successful match into an error.

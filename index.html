@@ -47,6 +47,31 @@
               aria-label="Alchemy sigil drawing canvas"
               aria-describedby="drawingGuide"
             ></canvas>
+            <div id="celebrationLayer" class="celebration-layer" aria-hidden="true">
+              <svg class="water-celebration" viewBox="0 0 1000 500" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="waterGradient" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0" stop-color="#67e8f9"></stop>
+                    <stop offset="0.5" stop-color="#38bdf8"></stop>
+                    <stop offset="1" stop-color="#a5f3fc"></stop>
+                  </linearGradient>
+                </defs>
+                <g class="water-stream water-stream-back" fill="none" stroke="url(#waterGradient)">
+                  <path d="M-80 285 C120 170 195 370 365 265 S690 155 1080 275"></path>
+                  <path d="M-80 315 C105 235 220 405 390 300 S720 210 1080 315"></path>
+                </g>
+                <g class="water-stream water-stream-front" fill="none" stroke="#cffafe">
+                  <path d="M-80 300 C110 205 210 390 370 285 S700 185 1080 295"></path>
+                </g>
+                <g class="water-droplets" fill="#67e8f9">
+                  <circle cx="180" cy="190" r="5"></circle>
+                  <circle cx="515" cy="145" r="4"></circle>
+                  <circle cx="795" cy="205" r="6"></circle>
+                  <circle cx="680" cy="355" r="4"></circle>
+                </g>
+              </svg>
+              <span class="celebration-caption">First Binding represents Water</span>
+            </div>
             <div id="stageMessage" class="stage-message">
               <div class="camera-icon" aria-hidden="true">◉</div>
               <strong>Start the camera and allow access</strong>
@@ -69,6 +94,7 @@
             <div>
               <p class="section-label">Original sigil</p>
               <h2 id="challengeTitle">First Binding</h2>
+              <p id="challengeElement" class="challenge-element">Element: Water</p>
               <p id="challengeMeaning" class="challenge-meaning">
                 A gentle seal that gathers scattered intention into one safe place.
               </p>

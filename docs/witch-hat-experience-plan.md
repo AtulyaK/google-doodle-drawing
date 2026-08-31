@@ -1,6 +1,6 @@
 # Witch-Hat Experience Plan
 
-**Status:** Proposal for critique; not an implementation specification
+**Status:** Living product plan; the First Binding MVP is implemented and this document tracks the next slice
 **Working title:** *Glyph Garden*
 **Reference boundary:** The broad mood of *Witch Hat Atelier*—wonder, craft, ink, and discovery—without adapting its characters, setting, terminology, or artwork.
 
@@ -12,21 +12,23 @@ The game should feel like practicing a beautiful craft, not passing a handwritin
 
 ## What exists now vs. what is proposed
 
-### Implemented current behavior: Doodle Motion
+### Implemented current behavior: Glyph Garden MVP
 
 - The app is a **camera-powered drawing practice** with a live canvas and camera preview.
 - A player starts the camera, holds **Space** as a drawing clutch, traces with an index fingertip, and releases Space to submit one stroke.
-- The current recognizer identifies four primitive categories: a horizontal, vertical, or diagonal **line**, **V**, **circle**, and **triangle**.
+- The current experience guides one original two-stroke sigil, **First Binding**: a vessel ring followed by an apex mark.
+- First Binding explicitly represents **Water**, has a player-facing meaning, and auto-completes after its final accepted stroke.
+- Completion shows a short water-stream animation across the stage, announces the meaning, and optionally plays an original procedural minor-mode alchemist score and cue.
 - Small, incomplete, or ambiguous strokes are rejected. A **Finish stroke** button submits captured points during drawing or after tracking pauses.
 - Brief tracking loss pauses drawing and can resume while Space remains held. The release frame and movement after release are excluded.
-- Successful identifications increment a score. Hand tracking runs in the browser; the README states that camera frames are not uploaded.
+- Hand tracking runs in the browser; the README states that camera frames are not uploaded.
 - Current terminology includes `idle`, `ready`, `drawing`, `paused`, and `submitted` phases.
 
 ### Proposed features in this plan
 
 - A named original world and art direction, virtual stencils, recipes, multi-stroke glyphs, progression, rewards, replay modes, and non-camera input.
 - A glyph layer that composes the four existing primitive recognitions into meaningful alchemy components.
-- These are design proposals only; they do not describe implemented behavior.
+- Additional sigils, object transformations, and broader input modes remain proposals; the First Binding behavior above is the current implementation baseline.
 
 ## Target audience
 
@@ -91,7 +93,7 @@ Orientation, scale, order, and combination—not the primitive alone—give a re
 - Valid components brighten, pulse once, and remain visible as the player's work.
 - A near miss shows a specific, non-judgmental hint such as “make the loop larger” or “try the fork's two legs.”
 - Tracking loss pauses rather than silently failing; the player can reacquire the hand or finish the captured stroke.
-- Successful glyph completion uses a short original visual transformation and an optional generated tone. A glyph may also have an original ambient bed, such as a quiet creek-like texture; audio is never required to understand success.
+- Successful glyph completion uses a short original water-stream transformation and a visible elemental label. The optional procedural score and completion cue are never required to understand success.
 
 ### Rewards
 
