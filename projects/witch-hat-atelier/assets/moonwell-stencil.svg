@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">The Moonwell stencil</title>
+  <desc id="desc">An original alchemy stencil above a desk with numbered tracing paths and a glowing ink stylus.</desc>
+  <defs>
+    <radialGradient id="paperGlow" cx="50%" cy="44%" r="58%">
+      <stop offset="0" stop-color="#fff8dc"/>
+      <stop offset="0.65" stop-color="#eee3c4"/>
+      <stop offset="1" stop-color="#d7c7a2"/>
+    </radialGradient>
+    <radialGradient id="inkGlow">
+      <stop offset="0" stop-color="#fff4ad" stop-opacity="0.95"/>
+      <stop offset="0.4" stop-color="#dfad55" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#dfad55" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+    <pattern id="grain" width="48" height="48" patternUnits="userSpaceOnUse">
+      <circle cx="5" cy="7" r="1" fill="#263735" opacity="0.08"/>
+      <circle cx="31" cy="18" r="0.8" fill="#263735" opacity="0.07"/>
+      <path d="M10 39l9-2M38 42l5-1" stroke="#263735" stroke-width="1" opacity="0.05"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="800" fill="#31494a"/>
+  <path d="M0 610Q260 570 520 614T1200 588V800H0Z" fill="#1d3436"/>
+  <path d="M80 649Q318 618 560 652T1127 623" fill="none" stroke="#d2bd8f" stroke-width="3" opacity="0.38"/>
+
+  <g transform="translate(136 70) rotate(-2 450 300)">
+    <path d="M40 32Q420-10 890 43L915 610Q470 650 15 600Z" fill="url(#paperGlow)" stroke="#172b32" stroke-width="5"/>
+    <path d="M65 61Q425 28 862 70L879 574Q460 610 50 563Z" fill="url(#grain)" stroke="#9b8968" stroke-width="2"/>
+
+    <g fill="none" stroke="#245e62" stroke-linecap="round" stroke-linejoin="round">
+      <ellipse cx="455" cy="341" rx="218" ry="175" stroke-width="14" stroke-dasharray="3 25" opacity="0.38"/>
+      <path d="M455 157V89M278 240l-58-35M632 240l58-35" stroke-width="12" stroke-dasharray="2 22" opacity="0.38"/>
+      <path d="M455 178C425 214 402 246 402 280c0 30 22 51 53 51s53-21 53-51c0-34-23-66-53-102Z" stroke-width="12" opacity="0.4"/>
+    </g>
+
+    <g fill="none" stroke="#a04f36" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M260 398C297 500 401 538 506 511" stroke-width="9"/>
+      <path d="M509 510C585 490 642 434 658 359" stroke-width="9" stroke-dasharray="1 18" opacity="0.52"/>
+      <path d="M455 157V102" stroke-width="8"/>
+    </g>
+
+    <g fill="#f8efd8" stroke="#245e62" stroke-width="5" font-family="Arial, sans-serif" font-size="24" font-weight="700" text-anchor="middle">
+      <circle cx="246" cy="363" r="25"/><text x="246" y="371" fill="#245e62" stroke="none">1</text>
+      <circle cx="455" cy="76" r="25"/><text x="455" y="84" fill="#245e62" stroke="none">2</text>
+      <circle cx="455" cy="361" r="25"/><text x="455" y="369" fill="#245e62" stroke="none">3</text>
+    </g>
+
+    <g fill="#263735" font-family="Georgia, serif">
+      <text x="92" y="119" font-size="27" letter-spacing="4">MOONWELL PRACTICE</text>
+      <text x="94" y="150" font-size="16" opacity="0.68">vessel / gathering rays / suspended seed</text>
+    </g>
+
+    <g transform="translate(700 474)">
+      <path d="M0 17h119M0 47h87M0 77h103" stroke="#746d59" stroke-width="3" opacity="0.45"/>
+      <circle cx="138" cy="18" r="9" fill="none" stroke="#a04f36" stroke-width="3"/>
+      <circle cx="106" cy="48" r="9" fill="#a04f36"/>
+      <circle cx="122" cy="78" r="9" fill="none" stroke="#a04f36" stroke-width="3"/>
+    </g>
+  </g>
+
+  <g transform="translate(884 508) rotate(24)">
+    <ellipse cx="62" cy="36" rx="84" ry="55" fill="url(#inkGlow)" filter="url(#softGlow)"/>
+    <path d="M8 174L54 24l31 10-49 148Z" fill="#d2bd8f" stroke="#172b32" stroke-width="5"/>
+    <path d="M54 24L72-8l13 42Z" fill="#c4893e" stroke="#172b32" stroke-width="5"/>
+    <path d="M8 174l28 8-24 22Z" fill="#172b32"/>
+    <circle cx="70" cy="12" r="9" fill="#fff1a8"/>
+  </g>
+
+  <g fill="none" stroke="#d2bd8f" stroke-width="4" opacity="0.66">
+    <path d="M94 684q78-36 164 4t169-4"/>
+    <path d="M784 684q83-45 177 0t167-9"/>
+  </g>
+</svg>

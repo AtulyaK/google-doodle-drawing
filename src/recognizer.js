@@ -514,14 +514,3 @@ export function recognizeStroke(inputPoints) {
     ? { ...best, orientation: lineOrientation(sampled) }
     : best;
 }
-
-export const recognizerInternals = {
-  boundingBox,
-  collapseNearDuplicates,
-  normalize,
-  pathLength,
-  polygonArea,
-  resample,
-  simplify,
-  lineOrientation,
-};

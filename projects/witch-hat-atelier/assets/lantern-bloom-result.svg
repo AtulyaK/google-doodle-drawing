@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">The lantern bloom answers</title>
+  <desc id="desc">An original folded paper lantern opens into a glowing botanical bloom above a completed alchemy mark.</desc>
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#18383b"/>
+      <stop offset="1" stop-color="#101f29"/>
+    </linearGradient>
+    <radialGradient id="bloomGlow">
+      <stop offset="0" stop-color="#fff5b8" stop-opacity="0.92"/>
+      <stop offset="0.28" stop-color="#efba62" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#efba62" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="petal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5df9e"/>
+      <stop offset="1" stop-color="#bd7847"/>
+    </linearGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="28"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#night)"/>
+  <circle cx="592" cy="337" r="280" fill="url(#bloomGlow)" filter="url(#blur)"/>
+
+  <g fill="#f3d88b">
+    <circle cx="175" cy="143" r="4"/>
+    <circle cx="1015" cy="184" r="5"/>
+    <circle cx="938" cy="97" r="3"/>
+    <circle cx="290" cy="245" r="3"/>
+    <circle cx="1081" cy="343" r="3"/>
+    <circle cx="111" cy="379" r="3"/>
+  </g>
+
+  <g transform="translate(600 390)" stroke="#102b2e" stroke-linejoin="round" stroke-width="7">
+    <path d="M-185 180Q-164 25-95-39Q-43-86 0-58Q43-86 95-39Q164 25 185 180Q78 230 0 219Q-78 230-185 180Z" fill="#d39b57"/>
+    <path d="M-185 180Q-89 128 0 219Q89 128 185 180Q78 230 0 219Q-78 230-185 180Z" fill="#9c4e36"/>
+    <path d="M0-58V219M-95-39Q-68 75 0 219M95-39Q68 75 0 219" fill="none" opacity="0.62"/>
+  </g>
+
+  <g transform="translate(600 338)" stroke="#173739" stroke-linecap="round" stroke-linejoin="round" stroke-width="7">
+    <path d="M0 32C-5-58-1-122 4-197" fill="none" stroke="#789269" stroke-width="14"/>
+
+    <path d="M-8-52C-77-52-130-93-137-145C-76-152-28-129 0-82Z" fill="url(#petal)"/>
+    <path d="M8-52C77-52 130-93 137-145C76-152 28-129 0-82Z" fill="url(#petal)"/>
+    <path d="M2-113C-44-148-61-204-31-246C20-215 34-164 2-113Z" fill="url(#petal)"/>
+    <path d="M2-113C48-148 65-204 35-246C-16-215-30-164 2-113Z" fill="url(#petal)"/>
+    <path d="M3-168C-16-216 4-266 51-281C75-226 48-185 3-168Z" fill="#f0c873"/>
+
+    <circle cx="3" cy="-159" r="32" fill="#fff0a8"/>
+    <path d="M-111-112Q-60-105-3-76M111-112Q60-105 3-76" fill="none" opacity="0.35"/>
+  </g>
+
+  <g transform="translate(600 661)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="0" cy="0" rx="235" ry="77" stroke="#5f9c93" stroke-width="6" stroke-dasharray="2 17" opacity="0.6"/>
+    <path d="M0-78V-119M-189-45l-36-25M189-45l36-25" stroke="#5f9c93" stroke-width="7" opacity="0.62"/>
+    <path d="M0-52C-24-27-39-4-39 17c0 23 17 39 39 39s39-16 39-39C39-4 24-27 0-52Z" stroke="#efc979" stroke-width="7"/>
+  </g>
+
+  <g fill="#e8dcb9" font-family="Georgia, serif" text-anchor="middle">
+    <text x="600" y="80" font-size="22" letter-spacing="8">RESPONSE: LANTERN BLOOM</text>
+    <text x="600" y="112" font-size="16" opacity="0.68">a patient light makes room for new growth</text>
+  </g>
+
+  <path d="M96 718Q280 686 430 720T765 716T1102 701" fill="none" stroke="#d9c28d" stroke-width="3" opacity="0.42"/>
+</svg>

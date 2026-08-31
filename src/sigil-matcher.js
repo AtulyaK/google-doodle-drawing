@@ -332,13 +332,3 @@ export function matchSigil(inputStrokes, template) {
     strokeResults,
   };
 }
-
-export const sigilMatcherInternals = {
-  boundingBox,
-  bestPathError,
-  cornerDepth,
-  normalizeComposition,
-  normalizePoints,
-  pathLength,
-  resample,
-};
