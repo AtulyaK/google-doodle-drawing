@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Water celebration controller checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; }
+    </style>
+  </head>
+  <body>
+    <h1>Water celebration controller checks</h1>
+    <div id="results"></div>
+    <script type="module">
+      import { createWaterCelebration } from "../src/water-celebration.js";
+
+      const results = document.querySelector("#results");
+      const tests = [];
+      const assert = (condition, message) => {
+        if (!condition) {
+          throw new Error(message);
+        }
+      };
+      const add = (name, check) => {
+        try {
+          check();
+          tests.push({ name, passed: true });
+        } catch (error) {
+          tests.push({ name, passed: false, error });
+        }
+      };
+      const timerHarness = () => {
+        const timers = new Map();
+        let nextId = 1;
+        return {
+          timers,
+          setTimeoutFn(callback, delay) {
+            const id = nextId++;
+            timers.set(id, { callback, delay });
+            return id;
+          },
+          clearTimeoutFn(id) {
+            timers.delete(id);
+          },
+          runOnlyTimer() {
+            assert(timers.size === 1, `expected one timer, found ${timers.size}`);
+            const [id, timer] = timers.entries().next().value;
+            timers.delete(id);
+            timer.callback();
+            return timer.delay;
+          },
+        };
+      };
+      const createStage = () => {
+        const stage = document.createElement("div");
+        stage.style.position = "relative";
+        stage.style.width = "640px";
+        stage.style.height = "400px";
+        document.body.append(stage);
+        return stage;
+      };
+
+      add("shows a side-to-side stream and self-clears", () => {
+        const timers = timerHarness();
+        const stage = createStage();
+        const celebration = createWaterCelebration({
+          stage,
+          durationMs: 800,
+          setTimeoutFn: timers.setTimeoutFn,
+          clearTimeoutFn: timers.clearTimeoutFn,
+          matchMedia: () => ({ matches: false }),
+        });
+        assert(celebration.show(), "show did not start");
+        assert(celebration.isActive, "controller is not active");
+        assert(!celebration.element.hidden, "stream was hidden while active");
+        assert(
+          celebration.element.querySelector("svg").style.transform.includes("-90%"),
+          "stream does not begin beyond the left side",
+        );
+        assert(timers.runOnlyTimer() === 800, "full-motion duration was not used");
+        assert(!celebration.isActive && celebration.element.hidden, "stream did not self-clear");
+        celebration.destroy();
+        stage.remove();
+      });
+
+      add("retriggering replaces the prior clear timer", () => {
+        const timers = timerHarness();
+        const stage = createStage();
+        const celebration = createWaterCelebration({
+          stage,
+          setTimeoutFn: timers.setTimeoutFn,
+          clearTimeoutFn: timers.clearTimeoutFn,
+        });
+        celebration.start({ duration: 100 });
+        celebration.show({ duration: 240 });
+        assert(timers.timers.size === 1, "retrigger left an old timer behind");
+        assert(timers.runOnlyTimer() === 240, "retrigger did not use the fresh duration");
+        assert(!celebration.isActive, "fresh timer did not clear the stream");
+        celebration.destroy();
+        stage.remove();
+      });
+
+      add("reduced motion presents a static stream briefly", () => {
+        const timers = timerHarness();
+        const stage = createStage();
+        const celebration = createWaterCelebration({
+          stage,
+          durationMs: 3600,
+          setTimeoutFn: timers.setTimeoutFn,
+          clearTimeoutFn: timers.clearTimeoutFn,
+          matchMedia: () => ({ matches: true }),
+        });
+        celebration.show();
+        const stream = celebration.element.querySelector("svg");
+        assert(stream.style.width === "112%", "reduced-motion stream did not span the stage");
+        assert(stream.getAnimations().length === 0, "reduced-motion stream animated");
+        assert(timers.runOnlyTimer() === 1200, "reduced-motion duration was not shortened");
+        celebration.destroy();
+        stage.remove();
+      });
+
+      add("the water label appears with the stream and clears with it", () => {
+        const timers = timerHarness();
+        const stage = createStage();
+        const celebration = createWaterCelebration({
+          stage,
+          caption: "First Binding represents Water",
+          durationMs: 500,
+          setTimeoutFn: timers.setTimeoutFn,
+          clearTimeoutFn: timers.clearTimeoutFn,
+          matchMedia: () => ({ matches: false }),
+        });
+        const caption = celebration.element.querySelector(".celebration-caption");
+        assert(caption, "the water label was not created");
+        assert(caption.textContent === "First Binding represents Water", "the water copy changed");
+        assert(caption.style.opacity === "0", "the label was visible before the celebration");
+        celebration.show();
+        assert(caption.style.opacity === "1", "the label did not appear with the stream");
+        timers.runOnlyTimer();
+        assert(caption.style.opacity === "0", "the label did not clear with the stream");
+        celebration.destroy();
+        stage.remove();
+      });
+
+      add("cancel and destroy leave no timers or overlay", () => {
+        const timers = timerHarness();
+        const stage = createStage();
+        const celebration = createWaterCelebration({
+          stage,
+          setTimeoutFn: timers.setTimeoutFn,
+          clearTimeoutFn: timers.clearTimeoutFn,
+        });
+        celebration.show();
+        celebration.cancel();
+        assert(timers.timers.size === 0, "cancel did not clear its timer");
+        assert(celebration.element.hidden, "cancel did not hide the stream");
+        celebration.destroy();
+        assert(!stage.querySelector("[data-water-celebration]"), "destroy left an overlay behind");
+        assert(!celebration.show(), "destroyed controller restarted");
+        stage.remove();
+      });
+
+      results.innerHTML = tests
+        .map(({ name, passed, error }) =>
+          `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name}${error ? ` — ${error.message}` : ""}</p>`)
+        .join("");
+      document.body.dataset.status = tests.every(({ passed }) => passed) ? "passed" : "failed";
+      window.__waterCelebrationTestResults = tests;
+
+      if (tests.some(({ passed }) => !passed)) {
+        throw new Error("One or more water celebration checks failed.");
+      }
+    </script>
+  </body>
+</html>

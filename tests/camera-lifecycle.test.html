@@ -31,6 +31,7 @@
       <p id="status">Camera is off</p>
       <button id="startButton" type="button">Start camera</button>
       <button id="finishButton" type="button" disabled>Finish stroke</button>
+      <button id="audioButton" type="button" aria-pressed="false">Enable ambience</button>
       <button id="resetButton" type="button">Reset</button>
       <div id="stage">
         <video id="camera" muted></video>
@@ -38,15 +39,18 @@
         <div id="stageMessage"></div>
       </div>
       <h2 id="challengeTitle"></h2>
+      <p id="challengeElement"></p>
+      <p id="challengeMeaning"></p>
       <div id="targetPreview"></div>
       <div class="feedback-panel">
         <p id="feedbackTitle"></p>
         <p id="feedbackDetail"></p>
       </div>
       <span id="score"></span>
-      <span data-shape-key="line"></span>
-      <span data-shape-key="circle"></span>
-      <span data-shape-key="triangle"></span>
+      <ol>
+        <li data-stroke-key="vessel"></li>
+        <li data-stroke-key="apex"></li>
+      </ol>
     </main>
 
     <script>
@@ -160,9 +164,10 @@
       };
 
       await import("../src/main.js");
+      const readyStatus = "Camera ready — hold Space to draw the Vessel.";
       document.querySelector("#startButton").click();
       await waitFor(
-        () => document.querySelector("#status").textContent === "Camera ready — hold Space to draw",
+        () => document.querySelector("#status").textContent === readyStatus,
         "camera did not reach ready state",
       );
 
@@ -173,7 +178,7 @@
 
         assert(document.querySelector("#finishButton").disabled, "Finish became enabled without Space");
         assert(
-          document.querySelector("#status").textContent === "Camera ready — hold Space to draw",
+          document.querySelector("#status").textContent === readyStatus,
           "landmarks without Space changed the ready state",
         );
         assert(scheduledFrames.size === 1, "frame loop scheduled more than one watchdog");
@@ -212,6 +217,9 @@
         assert(trackStopCalls === 1, `camera track stop count was ${trackStopCalls}`);
         assert(landmarkerCloseCalls === 1, `landmarker close count was ${landmarkerCloseCalls}`);
         assert(scheduledFrames.size === 0, "animation frame stayed scheduled");
+        const celebration = document.querySelector("#stage [data-water-celebration]");
+        assert(celebration, "the celebration layer was not mounted on the stage");
+        assert(celebration.hidden, "camera teardown left the celebration overlay visible");
 
         dispatchSpace("keyup");
         assert(document.querySelector("#finishButton").disabled, "released stale Space state submitted a stroke");

@@ -22,7 +22,7 @@ The product idea is a short guided ritual:
 2. The player holds Space while tracing one stroke.
 3. Releasing Space commits that stroke and advances the stencil.
 4. A complete sigil reveals its meaning, produces a restrained glow, and can play
-   an optional generated cue over a procedural ambient bed.
+   a short generated cue over the bundled licensed ambience track.
 5. A miss explains what to retry without storing the drawing or camera feed.
 
 The first content slice should be one two-stroke **ring plus chevron** sigil. It is
@@ -57,7 +57,8 @@ The current app is a static page with browser-native ES modules and no build ste
 | Recognition | Pure deterministic heuristics for line, V, circle, and triangle in `src/recognizer.js` |
 | Recognition preparation | finite-point sanitization, near-duplicate collapse, 64-point resampling, simplification, geometry metrics |
 | Rendering | One canvas over the video for the colored stencil, live stroke, committed strokes, and cursor; SVG previews in the challenge card |
-| Meaning and audio | First Binding meaning in template data; optional procedural ambience and completion cue in `src/ambient-audio.js` |
+| Celebration | `src/water-celebration.js` mounts its own self-contained SVG stream layer on the stage, carries the Water label, and cancels on reset, replay, and camera teardown |
+| Meaning and audio | First Binding meaning in template data; `src/ambient-audio.js` loops the bundled CC0 recording `assets/audio/the-old-tower-inn.mp3` through a media element after the opt-in gesture, plus a short generated completion cue |
 | Privacy | Camera frames and inference stay in the tab; tracks stop on page hide/disconnect; no app persistence |
 | Verification | Browser fixtures cover recognizer geometry, adversarial cases, Space boundaries, camera lifecycle, filter equations/regressions, short lines, and sparse triangles |
 
@@ -91,8 +92,9 @@ not require a framework or dependency injection container.
 | `sigil-templates.js` | Versioned original normalized template data and derived metadata | Captured user state |
 | `sigil-matcher.js` | Normalize/resample captured strokes and score one stroke or a composition | UI feedback, effects |
 | `stencil-renderer.js` | Draw ghost, progress, live stroke, cursor, and completion state in a defined order | Camera inference, audio |
+| `water-celebration.js` | Mount, play, and cancel the Water completion stream and its label on the stage | Match thresholds, canvas contents |
 | `feedback-presenter.js` | DOM status, instructions, score, `aria-live` announcements | Geometry decisions |
-| `effects.js` | CSS class events and optional Web Audio tones | Match thresholds or rendering |
+| `ambient-audio.js` | Opt-in playback of the bundled licensed ambience track, mute, and the secondary completion cue | Match thresholds or rendering |
 | `main.js` | Composition root: wires adapters, reducer, renderer, presenter, and lifecycle | Large algorithms |
 
 **Migration note:** extracting these boundaries does not require changing behavior in
@@ -305,26 +307,35 @@ Rendering rules:
 - Use CSS classes for short state pulses rather than rendering a permanent
   screenshot or storing the user's path.
 - Keep the Water celebration in a separate DOM/SVG layer above the canvas so it can
-  animate and clear without mutating captured strokes.
+  animate and clear without mutating captured strokes. `src/water-celebration.js`
+  owns that layer: it builds its own markup and inline styles, so the page carries no
+  duplicate celebration overlay or unused celebration CSS.
 - Cap device-pixel-ratio backing dimensions to avoid oversized canvases on dense
   displays.
 
 ## 7. Effects and audio
 
-`effects.js` should consume semantic events, not matcher internals:
+The effect seams consume semantic events, not matcher internals:
 
 - `strokeCommitted`: small progress accent;
-- `matched`: meaning announcement, CSS glow/pulse, short water-stream animation,
-  and optional short oscillator cue;
+- `matched`: meaning announcement, CSS glow/pulse, the `water-celebration.js` stream
+  and its Water label, and an optional short oscillator cue;
 - `rejected`: restrained shake/fade only when reduced motion is not requested;
 - camera/tracking failure: no celebratory effects.
 
-Use Web Audio only after a user gesture, create no remote audio asset, and expose a
-mute control. The current bed uses a low D/A drone and a minor-mode plucked
-motif; completion uses a short original D-minor cue. Respect
-`prefers-reduced-motion`; audio preference is independent of motion preference. The
-effect sink must tolerate AudioContext creation being blocked or unavailable and
-must never turn a successful match into an error.
+Ambience is a bundled licensed recording, not a generated bed. `ambient-audio.js`
+plays `assets/audio/the-old-tower-inn.mp3` ("The Old Tower Inn" by RandomMind,
+OpenGameArt, CC0 1.0) on a looping media element. The track is only attached to that
+element on the first **Enable ambience** press, so nothing is downloaded before the
+player opts in, the file is served from this origin rather than hotlinked, and mute
+pauses and rewinds it. Playback failure — a blocked `play()` or a media error —
+reports the control as unavailable and never turns a successful match into an error.
+
+The completion cue stays secondary: a short generated D-minor arpeggio that only
+sounds while ambience is already enabled, over an `AudioContext` created lazily after
+the user gesture. Creating that context may be blocked or unavailable; ambience must
+keep working when it is. Respect `prefers-reduced-motion`; audio preference is
+independent of motion preference.
 
 ## 8. Accessibility and privacy
 
@@ -386,9 +397,10 @@ only for new pure seams:
 | --- | --- |
 | `sigil-matcher.test.html` | Original ring/chevron positives under translation, scale, jitter, and permitted direction; near-miss and ambiguity negatives |
 | `capture-session.test.html` | Ordered multi-stroke boundaries, pause/recovery, finish actions, reset, and no post-release leakage |
-| `ambient-audio.test.html` | Optional Web Audio availability, ambience toggling, cleanup, and completion cue |
+| `ambient-audio.test.html` | Ambience availability, lazy track attachment, toggling, cleanup, blocked playback, and the secondary completion cue, all through a fake media element |
+| `water-celebration.test.html` | Stream lifecycle, Water label, retrigger, reduced motion, cancel, and destroy against injected timers |
 | `stencil-model.test.html` | Expected layer commands/progress semantics, independent of canvas pixels |
-| `effects.test.html` | CSS event names, reduced-motion behavior, fake AudioContext/mute handling |
+| `effects.test.html` | CSS event names, reduced-motion behavior, fake media element/AudioContext and mute handling |
 | `template-data.test.html` | Unit-square bounds, unique IDs/versions, declared order, and original-content metadata |
 
 Use synthetic point arrays, not recorded faces or camera video. Keep the MediaPipe
@@ -457,7 +469,7 @@ deterministically testable.
 | Normalized point paths over only SVG paths | Captures stroke order/direction and supports matching | Requires calibration data and metadata | Store both render/match intent in one schema |
 | Orientation locked initially | Avoids rotation/placement false positives | Less expressive | Lock first; add tested rotation later |
 | One canvas with conceptual layers | Minimal DOM and migration risk | More redraw work | Start here; split only after profiling |
-| Generated tone over audio asset | No asset licensing or network dependency | Browser audio policy and less musical richness | Optional short tone |
+| Bundled CC0 recording for ambience | Real musical richness with a permissive, recorded licence and no third-party runtime call | About 2.4 MB in the repository, downloaded on opt-in | Bundle the track; keep the generated cue secondary |
 | No persistence | Strong privacy and simple lifecycle | No progress history or personalization | Keep for first version |
 | Automatic final-stroke completion | Keeps the ritual flowing and removes a redundant control | A poor composition needs a clear retry state | Choose for the basic slice |
 
@@ -470,7 +482,7 @@ Before implementation, confirm:
 3. Orientation is locked for the first slice.
 4. Multi-stroke attempts auto-complete after the final accepted stroke.
 5. A failed composition resets the attempt (or the replacement policy is specified).
-6. Generated audio is optional and muted independently from reduced motion.
+6. Ambience and the completion cue are optional and muted independently from reduced motion.
 7. No persistence, telemetry, or remote frame processing is desired.
 8. The existing four-shape mode should remain available during migration or be
    replaced once the sigil slice is validated.

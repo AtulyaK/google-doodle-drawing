@@ -11,9 +11,42 @@
   </head>
   <body>
     <h1>Ambient audio checks</h1>
+    <p>
+      Scope: the bundled ambience recording is exercised through a fake media element, so these
+      checks never load audio over the network or depend on browser autoplay policy.
+    </p>
     <div id="results"></div>
     <script type="module">
       import { createAmbientAudio } from "../src/ambient-audio.js";
+
+      class FakeMediaElement {
+        constructor({ rejectPlay = false } = {}) {
+          this.src = "";
+          this.loop = false;
+          this.preload = "";
+          this.volume = 1;
+          this.currentTime = 0;
+          this.playCalls = 0;
+          this.pauseCalls = 0;
+          this.rejectPlay = rejectPlay;
+          this.listeners = new Map();
+        }
+        addEventListener(type, handler) {
+          this.listeners.set(type, handler);
+        }
+        emit(type) {
+          this.listeners.get(type)?.();
+        }
+        play() {
+          this.playCalls += 1;
+          return this.rejectPlay
+            ? Promise.reject(new Error("blocked"))
+            : Promise.resolve();
+        }
+        pause() {
+          this.pauseCalls += 1;
+        }
+      }
 
       class FakeParam {
         setValueAtTime() {}
@@ -39,11 +72,10 @@
 
       class FakeAudioContext {
         constructor() {
-          this.sampleRate = 1000;
           this.currentTime = 0;
           this.destination = {};
           this.oscillators = [];
-          this.sources = [];
+          this.closed = 0;
         }
         createGain() {
           return new FakeNode();
@@ -56,18 +88,11 @@
         createBiquadFilter() {
           return new FakeNode();
         }
-        createBuffer() {
-          return { getChannelData: () => new Float32Array(2000) };
-        }
-        createBufferSource() {
-          const source = new FakeNode();
-          this.sources.push(source);
-          return source;
-        }
         resume() {
           return Promise.resolve();
         }
         close() {
+          this.closed += 1;
           return Promise.resolve();
         }
       }
@@ -80,58 +105,130 @@
         }
       };
       const add = (name, check) => {
-        try {
-          check();
-          tests.push({ name, passed: true });
-        } catch (error) {
-          tests.push({ name, passed: false, error });
+        tests.push(
+          Promise.resolve()
+            .then(check)
+            .then(
+              () => ({ name, passed: true }),
+              (error) => ({ name, passed: false, error }),
+            ),
+        );
+      };
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+      const build = (overrides = {}) => {
+        const media = new FakeMediaElement(overrides.mediaOptions);
+        const contexts = [];
+        class TrackedContext extends FakeAudioContext {
+          constructor() {
+            super();
+            contexts.push(this);
+          }
         }
+        const changes = { count: 0 };
+        const audio = createAmbientAudio({
+          trackUrl: "fake://ambience.mp3",
+          createMediaElement: () => (overrides.noMedia ? null : media),
+          AudioContextClass: overrides.noAudioContext ? null : TrackedContext,
+          onChange: () => {
+            changes.count += 1;
+          },
+        });
+        return { audio, media, contexts, changes };
       };
 
-      add("audio unavailable is reported without creating a context", () => {
-        const audio = createAmbientAudio({
-          AudioContextClass: null,
-          setTimeoutFn: () => 1,
-          clearTimeoutFn: () => {},
-        });
-        assert(!audio.available, "audio reported as available");
-        assert(!audio.start(), "unavailable audio started");
-        assert(!audio.enabled, "unavailable audio became enabled");
+      add("ambience is unavailable when the browser has no media element", () => {
+        const { audio } = build({ noMedia: true });
+        assert(!audio.available, "missing media reported as available");
+        assert(!audio.start(), "unavailable ambience started");
+        assert(!audio.enabled, "unavailable ambience became enabled");
       });
 
-      add("ambience can start, play a cue, and be muted", () => {
-        const audio = createAmbientAudio({
-          AudioContextClass: FakeAudioContext,
-          setTimeoutFn: () => 1,
-          clearTimeoutFn: () => {},
-        });
+      add("start plays the bundled recording on a loop after the opt-in gesture", () => {
+        const { audio, media } = build();
+        assert(media.src === "", "the recording was requested before the opt-in gesture");
+        assert(audio.available, "ambience reported as unavailable");
         assert(audio.start(), "ambience did not start");
         assert(audio.enabled, "ambience was not enabled");
-        audio.playSigilComplete();
-        audio.stop();
-        assert(!audio.enabled, "stop did not mute ambience");
+        assert(media.playCalls === 1, "the recording was not played");
+        assert(media.src === "fake://ambience.mp3", "the bundled recording was not attached");
+        assert(media.loop, "the recording does not loop");
+        assert(media.volume > 0 && media.volume < 1, "ambience is not mixed below full volume");
       });
 
-      add("toggle starts a fresh ambient bed after stopping", () => {
-        const audio = createAmbientAudio({
-          AudioContextClass: FakeAudioContext,
-          setTimeoutFn: () => 1,
-          clearTimeoutFn: () => {},
-        });
+      add("start is idempotent and does not restart the recording", () => {
+        const { audio, media } = build();
+        audio.start();
+        audio.start();
+        assert(media.playCalls === 1, "a second start restarted playback");
+      });
+
+      add("mute pauses and rewinds the recording", () => {
+        const { audio, media } = build();
+        audio.start();
+        media.currentTime = 42;
+        audio.stop();
+        assert(!audio.enabled, "stop did not mute ambience");
+        assert(media.pauseCalls === 1, "stop did not pause the recording");
+        assert(media.currentTime === 0, "stop did not rewind the recording");
+      });
+
+      add("toggle restarts the recording after muting", () => {
+        const { audio, media } = build();
         assert(audio.toggle(), "toggle did not enable ambience");
         assert(!audio.toggle(), "toggle did not disable ambience");
         assert(audio.toggle(), "toggle did not re-enable ambience");
+        assert(media.playCalls === 2, "toggle did not replay the recording");
         audio.stop();
       });
 
-      results.innerHTML = tests
+      add("the completion cue only sounds while ambience is on", () => {
+        const { audio, contexts } = build();
+        audio.playSigilComplete();
+        assert(contexts.length === 0, "the cue sounded while ambience was muted");
+        audio.start();
+        audio.playSigilComplete();
+        assert(contexts.length === 1, "the cue did not sound");
+        assert(contexts[0].oscillators.length === 3, "the cue did not play its three notes");
+        audio.stop();
+        assert(contexts[0].closed === 1, "stop did not release the cue context");
+      });
+
+      add("a missing cue engine never blocks ambience", () => {
+        const { audio, media } = build({ noAudioContext: true });
+        assert(audio.start(), "ambience did not start without an AudioContext");
+        audio.playSigilComplete();
+        assert(audio.enabled, "a missing cue engine disabled ambience");
+        assert(media.playCalls === 1, "the recording did not play");
+      });
+
+      add("blocked playback reports ambience as unavailable", async () => {
+        const { audio, changes } = build({ mediaOptions: { rejectPlay: true } });
+        assert(audio.start(), "start did not accept the gesture optimistically");
+        await flush();
+        assert(!audio.enabled, "blocked playback stayed enabled");
+        assert(!audio.available, "blocked playback stayed available");
+        assert(changes.count === 1, "the failure was not reported to the UI");
+      });
+
+      add("a media error reports ambience as unavailable", () => {
+        const { audio, media, changes } = build();
+        audio.start();
+        media.emit("error");
+        assert(!audio.enabled, "a media error left ambience enabled");
+        assert(!audio.available, "a media error left ambience available");
+        assert(!audio.start(), "a failed ambience restarted");
+        assert(changes.count === 1, "the failure was reported more than once");
+      });
+
+      const settled = await Promise.all(tests);
+      results.innerHTML = settled
         .map(({ name, passed, error }) =>
           `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name}${error ? ` — ${error.message}` : ""}</p>`)
         .join("");
-      document.body.dataset.status = tests.every(({ passed }) => passed) ? "passed" : "failed";
-      window.__ambientAudioTestResults = tests;
+      document.body.dataset.status = settled.every(({ passed }) => passed) ? "passed" : "failed";
+      window.__ambientAudioTestResults = settled;
 
-      if (tests.some(({ passed }) => !passed)) {
+      if (settled.some(({ passed }) => !passed)) {
         throw new Error("One or more ambient audio checks failed.");
       }
     </script>

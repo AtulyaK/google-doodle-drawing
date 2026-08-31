@@ -1,5 +1,6 @@
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm";
 import { createAmbientAudio } from "./ambient-audio.js";
+import { createWaterCelebration } from "./water-celebration.js";
 import { VectorOneEuroFilter } from "./one-euro-filter.js";
 import { createCaptureSession } from "./capture-session.js";
 import { createSpacebarClutch } from "./spacebar-clutch.js";
@@ -23,13 +24,11 @@ const BRIDGE_MAX_GAP_MS = 180;
 const BRIDGE_STEP_DISTANCE = 18;
 const MAX_BRIDGE_STEPS = 4;
 const MIN_STROKE_POINTS = 5;
-const CELEBRATION_DURATION_MS = 3600;
 
 const elements = {
   stage: document.querySelector("#stage"),
   video: document.querySelector("#camera"),
   canvas: document.querySelector("#drawingCanvas"),
-  celebrationLayer: document.querySelector("#celebrationLayer"),
   stageMessage: document.querySelector("#stageMessage"),
   status: document.querySelector("#status"),
   startButton: document.querySelector("#startButton"),
@@ -49,7 +48,11 @@ const elements = {
 
 const context = elements.canvas.getContext("2d");
 const captureSession = createCaptureSession(FIRST_BINDING.strokes.length);
-const ambientAudio = createAmbientAudio();
+const ambientAudio = createAmbientAudio({ onChange: () => updateAudioButton() });
+const waterCelebration = createWaterCelebration({
+  stage: elements.stage,
+  caption: `${FIRST_BINDING.name} represents ${FIRST_BINDING.element}`,
+});
 const state = {
   phase: PHASE.IDLE,
   phaseSince: 0,
@@ -65,13 +68,20 @@ const state = {
   pointFilter: new VectorOneEuroFilter({ minCutoff: 1.1, beta: 0.08 }),
   score: 0,
   sigilCompleted: false,
-  celebrationTimer: null,
   busy: false,
 };
 
 function setStatus(message, tone = "neutral") {
   elements.status.textContent = message;
   elements.status.dataset.tone = tone;
+}
+
+// Hiding the stage overlay drops keyboard focus to the body, so hand it to the
+// next sensible control instead of sending the player back to the page start.
+function reclaimFocus(target) {
+  if (document.activeElement === document.body || document.activeElement === null) {
+    target?.focus?.();
+  }
 }
 
 function setFeedback(title, detail, tone = "neutral") {
@@ -235,27 +245,6 @@ function resizeCanvas() {
   redraw();
 }
 
-function hideCelebration() {
-  if (state.celebrationTimer !== null) {
-    window.clearTimeout(state.celebrationTimer);
-    state.celebrationTimer = null;
-  }
-  elements.celebrationLayer?.classList.remove("is-active");
-}
-
-function showWaterCelebration() {
-  if (!elements.celebrationLayer) {
-    return;
-  }
-  hideCelebration();
-  void elements.celebrationLayer.offsetWidth;
-  elements.celebrationLayer.classList.add("is-active");
-  state.celebrationTimer = window.setTimeout(() => {
-    elements.celebrationLayer.classList.remove("is-active");
-    state.celebrationTimer = null;
-  }, CELEBRATION_DURATION_MS);
-}
-
 function canvasPoint(point) {
   const rect = elements.stage.getBoundingClientRect();
   const videoWidth = elements.video.videoWidth || 16;
@@ -383,7 +372,7 @@ function appendPoint(point, timestamp) {
 function resetStrokeLifecycle() {
   captureSession.dispatch({ type: "reset" });
   syncCaptureState();
-  hideCelebration();
+  waterCelebration.cancel();
   state.cursor = null;
   state.pauseSince = null;
   state.sigilCompleted = false;
@@ -455,7 +444,7 @@ function submitStroke(timestamp, finishReason = "release") {
 function resetAttempt() {
   captureSession.dispatch({ type: "reset" });
   syncCaptureState();
-  hideCelebration();
+  waterCelebration.cancel();
   state.cursor = null;
   state.pauseSince = null;
   state.sigilCompleted = false;
@@ -477,7 +466,7 @@ function completeSigil(timestamp = performance.now()) {
   if (result.matched) {
     state.score += 1;
     state.sigilCompleted = true;
-    showWaterCelebration();
+    waterCelebration.start();
     ambientAudio.playSigilComplete();
     setFeedback(
       `${FIRST_BINDING.element} sigil awakened`,
@@ -664,6 +653,7 @@ function handleCameraEnded() {
   elements.startButton.disabled = false;
   setStatus("Camera disconnected", "error");
   setFeedback("Camera connection ended", "Reconnect the camera to keep drawing.", "error");
+  reclaimFocus(elements.startButton);
 }
 
 async function startCamera() {
@@ -712,11 +702,14 @@ async function startCamera() {
     );
     scheduleFrame();
     elements.startButton.textContent = "Camera ready";
+    reclaimFocus(elements.status);
   } catch (error) {
     stopCamera();
     elements.stageMessage.classList.remove("is-hidden");
     setStatus("Camera could not start", "error");
     setFeedback("Camera access needed", error instanceof Error ? error.message : "Please check your browser permissions.", "error");
+    elements.startButton.disabled = false;
+    reclaimFocus(elements.startButton);
   } finally {
     state.busy = false;
     elements.startButton.disabled = Boolean(state.stream);
@@ -792,6 +785,7 @@ elements.resetButton.addEventListener("click", resetGame);
 window.addEventListener("pagehide", () => {
   stopCamera();
   ambientAudio.stop();
+  waterCelebration.cancel();
 });
 window.addEventListener("resize", resizeCanvas);
 

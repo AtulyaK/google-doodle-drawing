@@ -1,157 +1,137 @@
-const AMBIENT_NOTES = [146.83, 174.61, 220, 277.18, 293.66, 220, 174.61, 110];
-const AMBIENT_STEP_MS = 2200;
-const AMBIENT_NOTE_DURATION_S = 2.9;
-const DRONE_FREQUENCIES = [73.42, 110];
+// Ambience plays a bundled CC0 recording ("The Old Tower Inn" by RandomMind,
+// OpenGameArt) through a media element. The short completion cue is generated and
+// stays secondary: it never plays unless ambience is already enabled.
+const DEFAULT_TRACK_URL = new URL("../assets/audio/the-old-tower-inn.mp3", import.meta.url).href;
+const DEFAULT_VOLUME = 0.32;
+const COMPLETION_NOTES = [293.66, 349.23, 440];
+
+function defaultCreateMediaElement() {
+  if (typeof globalThis.Audio !== "function") {
+    return null;
+  }
+  return new globalThis.Audio();
+}
 
 function disconnect(node) {
   node?.disconnect?.();
 }
 
 export function createAmbientAudio({
+  trackUrl = DEFAULT_TRACK_URL,
+  volume = DEFAULT_VOLUME,
+  createMediaElement = defaultCreateMediaElement,
   AudioContextClass = globalThis.AudioContext ?? globalThis.webkitAudioContext,
-  setTimeoutFn = globalThis.setTimeout,
-  clearTimeoutFn = globalThis.clearTimeout,
+  onChange = () => {},
 } = {}) {
-  let context = null;
-  let master = null;
-  let droneNodes = [];
-  let ambientTimer = null;
-  let noteIndex = 0;
+  const media = createMediaElement();
+  let cueContext = null;
   let enabled = false;
+  let failed = false;
+  let trackAttached = false;
 
-  function createDrone() {
-    if (!context || !master) {
-      return;
+  function fail() {
+    const wasUsable = !failed;
+    failed = true;
+    enabled = false;
+    media?.pause?.();
+    if (wasUsable) {
+      onChange();
     }
-
-    droneNodes = DRONE_FREQUENCIES.map((frequency, index) => {
-      const oscillator = context.createOscillator();
-      const filter = context.createBiquadFilter();
-      const gain = context.createGain();
-      oscillator.type = index === 0 ? "sine" : "triangle";
-      oscillator.frequency.value = frequency;
-      filter.type = "lowpass";
-      filter.frequency.value = index === 0 ? 420 : 720;
-      gain.gain.value = index === 0 ? 0.018 : 0.008;
-      oscillator.connect(filter);
-      filter.connect(gain);
-      gain.connect(master);
-      oscillator.start();
-      return { oscillator, filter, gain };
-    });
   }
 
-  function scheduleAmbientNote() {
-    if (!enabled || !context || !master) {
+  if (media && typeof media.addEventListener === "function") {
+    media.addEventListener("error", fail);
+  }
+
+  // The track is only attached on the first explicit start, so nothing is
+  // downloaded before the player opts in.
+  function attachTrack() {
+    if (trackAttached) {
       return;
     }
-
-    const now = context.currentTime;
-    const oscillator = context.createOscillator();
-    const harmonic = context.createOscillator();
-    const filter = context.createBiquadFilter();
-    const gain = context.createGain();
-    const harmonicGain = context.createGain();
-    oscillator.type = "triangle";
-    harmonic.type = "sine";
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(1800, now);
-    const frequency = AMBIENT_NOTES[noteIndex % AMBIENT_NOTES.length];
-    oscillator.frequency.setValueAtTime(frequency, now);
-    harmonic.frequency.setValueAtTime(frequency * 2, now);
-    noteIndex += 1;
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.024, now + 0.08);
-    gain.gain.linearRampToValueAtTime(0.0001, now + AMBIENT_NOTE_DURATION_S);
-    harmonicGain.gain.setValueAtTime(0.0001, now);
-    harmonicGain.gain.linearRampToValueAtTime(0.007, now + 0.04);
-    harmonicGain.gain.linearRampToValueAtTime(0.0001, now + 1.4);
-    oscillator.connect(filter);
-    filter.connect(gain);
-    gain.connect(master);
-    harmonic.connect(harmonicGain);
-    harmonicGain.connect(master);
-    oscillator.onended = () => {
-      disconnect(oscillator);
-      disconnect(harmonic);
-      disconnect(filter);
-      disconnect(gain);
-      disconnect(harmonicGain);
-    };
-    oscillator.start(now);
-    harmonic.start(now);
-    oscillator.stop(now + AMBIENT_NOTE_DURATION_S);
-    harmonic.stop(now + AMBIENT_NOTE_DURATION_S);
-    ambientTimer = setTimeoutFn(() => {
-      ambientTimer = null;
-      scheduleAmbientNote();
-    }, AMBIENT_STEP_MS);
+    media.loop = true;
+    media.preload = "auto";
+    media.src = trackUrl;
+    trackAttached = true;
   }
 
   function start() {
+    if (!media || failed) {
+      return false;
+    }
     if (enabled) {
       return true;
     }
-    if (!AudioContextClass) {
+    if (typeof media.play !== "function") {
+      fail();
       return false;
     }
 
-    if (!context) {
-      context = new AudioContextClass();
-      master = context.createGain();
-      master.gain.value = 0.7;
-      master.connect(context.destination);
-      createDrone();
-    }
-
+    attachTrack();
+    media.volume = volume;
     enabled = true;
-    const resumeResult = context.resume?.();
-    if (resumeResult?.catch) {
-      resumeResult.catch(() => {
-        enabled = false;
-      });
+    const playback = media.play();
+    if (playback?.catch) {
+      playback.catch(fail);
     }
-    scheduleAmbientNote();
     return true;
   }
 
   function stop() {
     enabled = false;
-    if (ambientTimer !== null) {
-      clearTimeoutFn(ambientTimer);
-      ambientTimer = null;
+    if (media) {
+      media.pause?.();
+      try {
+        media.currentTime = 0;
+      } catch {
+        // Seeking can be rejected before metadata loads; muting is enough.
+      }
     }
-    droneNodes.forEach(({ oscillator, filter, gain }) => {
-      oscillator.stop();
-      disconnect(oscillator);
-      disconnect(filter);
-      disconnect(gain);
-    });
-    droneNodes = [];
-    if (context) {
-      void context.close?.();
-      context = null;
-      master = null;
+    if (cueContext) {
+      void cueContext.close?.();
+      cueContext = null;
     }
   }
 
+  function cueTarget() {
+    if (cueContext) {
+      return cueContext;
+    }
+    if (!AudioContextClass) {
+      return null;
+    }
+    try {
+      cueContext = new AudioContextClass();
+    } catch {
+      return null;
+    }
+    cueContext.resume?.()?.catch?.(() => {});
+    return cueContext;
+  }
+
   function playSigilComplete() {
-    if (!enabled || !context || !master) {
+    if (!enabled) {
+      return;
+    }
+    const context = cueTarget();
+    if (!context) {
       return;
     }
 
+    const master = context.destination;
     const now = context.currentTime;
-    [293.66, 349.23, 440].forEach((frequency, index) => {
+    COMPLETION_NOTES.forEach((frequency, index) => {
+      const offset = now + index * 0.12;
       const oscillator = context.createOscillator();
       const filter = context.createBiquadFilter();
       const gain = context.createGain();
       oscillator.type = "triangle";
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(2200, now + index * 0.12);
-      oscillator.frequency.setValueAtTime(frequency, now + index * 0.12);
-      gain.gain.setValueAtTime(0.0001, now + index * 0.12);
-      gain.gain.linearRampToValueAtTime(0.045, now + index * 0.12 + 0.04);
-      gain.gain.linearRampToValueAtTime(0.0001, now + index * 0.12 + 1.2);
+      filter.frequency.setValueAtTime(2200, offset);
+      oscillator.frequency.setValueAtTime(frequency, offset);
+      gain.gain.setValueAtTime(0.0001, offset);
+      gain.gain.linearRampToValueAtTime(0.05, offset + 0.04);
+      gain.gain.linearRampToValueAtTime(0.0001, offset + 1.2);
       oscillator.connect(filter);
       filter.connect(gain);
       gain.connect(master);
@@ -160,8 +140,8 @@ export function createAmbientAudio({
         disconnect(filter);
         disconnect(gain);
       };
-      oscillator.start(now + index * 0.12);
-      oscillator.stop(now + index * 0.12 + 1.25);
+      oscillator.start(offset);
+      oscillator.stop(offset + 1.25);
     });
   }
 
@@ -170,7 +150,10 @@ export function createAmbientAudio({
       return enabled;
     },
     get available() {
-      return Boolean(AudioContextClass);
+      return Boolean(media) && !failed;
+    },
+    get trackUrl() {
+      return trackUrl;
     },
     start,
     stop,

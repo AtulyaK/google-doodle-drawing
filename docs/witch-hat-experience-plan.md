@@ -15,10 +15,11 @@ The game should feel like practicing a beautiful craft, not passing a handwritin
 ### Implemented current behavior: Glyph Garden MVP
 
 - The app is a **camera-powered drawing practice** with a live canvas and camera preview.
+- The page keeps one primary action at a time: a compact masthead, a stage overlay carrying **Start camera** until the camera is live, and a toolbar with the live status plus the quieter **Finish stroke**, **Enable ambience**, and **Reset** actions.
 - A player starts the camera, holds **Space** as a drawing clutch, traces with an index fingertip, and releases Space to submit one stroke.
 - The current experience guides one original two-stroke sigil, **First Binding**: a vessel ring followed by an apex mark.
 - First Binding explicitly represents **Water**, has a player-facing meaning, and auto-completes after its final accepted stroke.
-- Completion shows a short water-stream animation across the stage, announces the meaning, and optionally plays an original procedural minor-mode alchemist score and cue.
+- Completion shows a short water-stream animation with a Water label across the stage, announces the meaning, and optionally plays a bundled licensed ambience track with a short generated completion cue.
 - Small, incomplete, or ambiguous strokes are rejected. A **Finish stroke** button submits captured points during drawing or after tracking pauses.
 - Brief tracking loss pauses drawing and can resume while Space remains held. The release frame and movement after release are excluded.
 - Hand tracking runs in the browser; the README states that camera frames are not uploaded.
@@ -93,7 +94,7 @@ Orientation, scale, order, and combination—not the primitive alone—give a re
 - Valid components brighten, pulse once, and remain visible as the player's work.
 - A near miss shows a specific, non-judgmental hint such as “make the loop larger” or “try the fork's two legs.”
 - Tracking loss pauses rather than silently failing; the player can reacquire the hand or finish the captured stroke.
-- Successful glyph completion uses a short original water-stream transformation and a visible elemental label. The optional procedural score and completion cue are never required to understand success.
+- Successful glyph completion uses a short original water-stream transformation and a visible elemental label. The optional ambience track and completion cue are never required to understand success.
 
 ### Rewards
 
@@ -157,7 +158,7 @@ Proposed default:
 - Do not use the reference's characters, names, setting, terminology, plot, costumes, panel layouts, recognizable glyphs, or copied compositions.
 - Create a distinct product name, symbol vocabulary, UI, object designs, animation language, and sound palette.
 - Treat “alchemy glyph” as a generic design premise; every glyph arrangement and finished artwork must be newly authored.
-- Keep a short asset provenance record for commissioned, generated, or licensed art and sound.
+- Keep a short asset provenance record for commissioned, generated, or licensed art and sound. The current record: ambience is "The Old Tower Inn" by RandomMind (OpenGameArt, CC0 1.0), bundled at `assets/audio/the-old-tower-inn.mp3` and credited in the README; every other visual and sound element is authored in this repository.
 - Do not market the game as an adaptation, official companion, or branded experience. A legal review should approve final public-facing copy before release.
 
 ## MVP and non-goals

@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <title>Production flow checks</title>
+    <meta charset="utf-8" />
+    <title>Production sigil flow checks</title>
     <style>
       body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
       .pass { color: #087f5b; }
@@ -19,10 +19,10 @@
     </script>
   </head>
   <body>
-    <h1>Production flow checks</h1>
+    <h1>Production sigil flow checks</h1>
     <p>
-      Scope: production camera and Spacebar flow with short strokes and open-ended shape
-      identification. The camera and MediaPipe boundaries are stubbed.
+      Scope: the current First Binding camera and Spacebar flow with camera and MediaPipe
+      boundaries stubbed.
     </p>
     <p id="summary">Running...</p>
     <div id="results"></div>
@@ -31,6 +31,7 @@
       <p id="status">Camera is off</p>
       <button id="startButton" type="button">Start camera</button>
       <button id="finishButton" type="button" disabled>Finish stroke</button>
+      <button id="audioButton" type="button" aria-pressed="false">Enable ambience</button>
       <button id="resetButton" type="button">Reset</button>
       <div id="stage">
         <video id="camera" muted></video>
@@ -38,16 +39,18 @@
         <div id="stageMessage"></div>
       </div>
       <h2 id="challengeTitle"></h2>
+      <p id="challengeElement"></p>
+      <p id="challengeMeaning"></p>
       <div id="targetPreview"></div>
+      <ol>
+        <li data-stroke-key="vessel"></li>
+        <li data-stroke-key="apex"></li>
+      </ol>
       <div class="feedback-panel">
         <p id="feedbackTitle"></p>
         <p id="feedbackDetail"></p>
       </div>
       <span id="score"></span>
-      <span data-shape-key="line"></span>
-      <span data-shape-key="circle"></span>
-      <span data-shape-key="triangle"></span>
-      <span data-shape-key="v"></span>
     </main>
 
     <script>
@@ -97,8 +100,7 @@
       });
       video.play = async () => {};
 
-      const hand = Array.from({ length: 9 }, () => ({ x: 0.5, y: 0.5 }));
-      window.__fakeLandmarkResult = { landmarks: [[...hand]] };
+      window.__fakeLandmarkResult = { landmarks: [] };
       window.__fakeHandLandmarker = {
         detectForVideo: () => window.__fakeLandmarkResult,
         close: () => {},
@@ -110,6 +112,14 @@
       const assert = (condition, message) => {
         if (!condition) {
           throw new Error(message);
+        }
+      };
+      const test = async (name, check) => {
+        try {
+          await check();
+          tests.push({ name, passed: true });
+        } catch (error) {
+          tests.push({ name, passed: false, error });
         }
       };
       const waitFor = async (check, message) => {
@@ -140,103 +150,102 @@
         landmarks[8] = { x, y };
         window.__fakeLandmarkResult = { landmarks: [landmarks] };
       };
-      const jitterPattern = [0, 1, -1, 0.5, -0.5, 0, 0.75, -0.75, 0];
+      const stageToLandmark = ({ x, y }) => {
+        const stage = document.querySelector("#stage");
+        const rect = stage.getBoundingClientRect();
+        const scale = Math.max(rect.width / video.videoWidth, rect.height / video.videoHeight);
+        const renderedWidth = video.videoWidth * scale;
+        const renderedHeight = video.videoHeight * scale;
+        const offsetX = (renderedWidth - rect.width) / 2;
+        const offsetY = (renderedHeight - rect.height) / 2;
+        return {
+          x: 1 - (x + offsetX) / renderedWidth,
+          y: (y + offsetY) / renderedHeight,
+        };
+      };
+      const trace = (points, timeOffset, frameOffset) => {
+        points.forEach((point, index) => {
+          const landmark = stageToLandmark(point);
+          setFingertip(landmark.x, landmark.y);
+          video.currentTime = timeOffset + index;
+          runFrame(frameOffset + index * 16);
+        });
+      };
+      const ringPoints = Array.from({ length: 16 }, (_, index) => {
+        const angle = (index / 15) * Math.PI * 2;
+        return {
+          x: 160 + Math.cos(angle) * 49,
+          y: 100 + Math.sin(angle) * 49,
+        };
+      });
+      const apexPoints = [
+        { x: 133.76, y: 70.48 },
+        { x: 140.32, y: 85.24 },
+        { x: 146.88, y: 100 },
+        { x: 153.44, y: 114.76 },
+        { x: 160, y: 129.52 },
+        { x: 166.56, y: 114.76 },
+        { x: 173.12, y: 100 },
+        { x: 179.68, y: 85.24 },
+        { x: 186.24, y: 70.48 },
+      ];
 
       await import("../src/main.js");
       document.querySelector("#startButton").click();
       await waitFor(
-        () => document.querySelector("#status").textContent === "Camera ready — hold Space to draw",
+        () => document.querySelector("#status").textContent === "Camera ready — hold Space to draw the Vessel.",
         "camera did not reach ready state",
       );
 
-      dispatchSpace("keydown");
-      for (let index = 0; index < 5; index += 1) {
-        const ratio = index / 4;
-        setFingertip(0.45 + ratio * 0.1, 0.5);
-        video.currentTime = index + 1;
-        runFrame(index * 33);
-      }
-      dispatchSpace("keyup");
-
-      const score = document.querySelector("#score").textContent;
-      tests.push({
-        name: "five-point short line submits through production flow",
-        passed: score === "1",
-        detail: `score=${score}, feedback=${document.querySelector("#feedbackTitle").textContent}`,
-      });
-      tests.push({
-        name: "identification mode does not present a target challenge",
-        passed:
-          document.querySelector("#challengeTitle").textContent === "Identify the shape" &&
-          document.querySelector("#targetPreview").getAttribute("aria-label") ===
-            "Supported shapes: line, circle, triangle, V",
-        detail: `title=${document.querySelector("#challengeTitle").textContent}`,
-      });
-
-      dispatchSpace("keydown");
-      const vVertices = [
-        { x: 0.26, y: 0.24 },
-        { x: 0.5, y: 0.78 },
-        { x: 0.74, y: 0.24 },
-      ];
-      let sampleIndex = 0;
-      for (let segment = 0; segment < vVertices.length - 1; segment += 1) {
-        const start = vVertices[segment];
-        const end = vVertices[segment + 1];
-        for (let step = 0; step <= 4; step += 1) {
-          if (segment > 0 && step === 0) {
-            continue;
-          }
-          const ratio = step / 4;
-          setFingertip(
-            start.x + (end.x - start.x) * ratio,
-            start.y + (end.y - start.y) * ratio,
-          );
-          video.currentTime = 20 + sampleIndex;
-          runFrame(300 + sampleIndex * 33);
-          sampleIndex += 1;
-        }
-      }
-      dispatchSpace("keyup");
-
-      const vScore = document.querySelector("#score").textContent;
-      tests.push({
-        name: "a recognized shape is accepted without matching a target order",
-        passed: vScore === "2" && document.querySelector("#feedbackTitle").textContent === "Shape identified",
-        detail: `score=${vScore}, feedback=${document.querySelector("#feedbackTitle").textContent}`,
-      });
-
-      dispatchSpace("keydown");
-      for (let index = 0; index < jitterPattern.length; index += 1) {
-        const ratio = index / (jitterPattern.length - 1);
-        setFingertip(
-          0.465 + ratio * 0.07,
-          0.5 + (jitterPattern[index] * 3) / 200,
+      await test("camera flow exposes the current Water sigil", () => {
+        assert(document.querySelector("#challengeTitle").textContent === "First Binding", "sigil title missing");
+        assert(document.querySelector("#challengeElement").textContent === "Element: Water", "Water affinity missing");
+        assert(
+          document.querySelector("#targetPreview").getAttribute("aria-label").includes("First Binding water sigil"),
+          "current stencil description missing",
         );
-        video.currentTime = 40 + index;
-        runFrame(700 + index * 33);
-      }
-      dispatchSpace("keyup");
+      });
 
-      const jitteredShortLineScore = document.querySelector("#score").textContent;
-      tests.push({
-        name: "a short jittered line submits through production flow",
-        passed: jitteredShortLineScore === "3" && document.querySelector("#feedbackTitle").textContent === "Shape identified",
-        detail: `score=${jitteredShortLineScore}, feedback=${document.querySelector("#feedbackTitle").textContent}`,
+      await test("a short sampled vessel ring commits on Space release", () => {
+        dispatchSpace("keydown");
+        trace(ringPoints, 10, 100);
+        dispatchSpace("keyup");
+
+        assert(document.querySelector("#score").textContent === "0", "first stroke changed score");
+        assert(document.querySelector("#feedbackTitle").textContent === "Vessel inscribed", "vessel was not accepted");
+        assert(document.querySelector('[data-stroke-key="vessel"]').classList.contains("is-complete"), "vessel progress stayed active");
+      });
+
+      await test("the second stroke completes the sigil automatically", () => {
+        dispatchSpace("keydown");
+        trace(apexPoints, 30, 400);
+        dispatchSpace("keyup");
+
+        assert(document.querySelector("#score").textContent === "1", "sigil did not increment score");
+        assert(document.querySelector("#feedbackTitle").textContent === "Water sigil awakened", "completion feedback missing");
+        assert(!document.querySelector("[data-water-celebration]").hidden, "water celebration did not start");
+      });
+
+      await test("Reset clears score and hides the celebration", () => {
+        document.querySelector("#resetButton").click();
+
+        assert(document.querySelector("#score").textContent === "0", "Reset kept the score");
+        assert(document.querySelector("[data-water-celebration]").hidden, "Reset left celebration visible");
+        assert(document.querySelector("#feedbackTitle").textContent === "Ready when you are", "Reset feedback missing");
       });
 
       const passed = tests.filter(({ passed: ok }) => ok).length;
       const failed = tests.length - passed;
       document.querySelector("#results").innerHTML = tests
-        .map(({ name, passed: ok, detail }) =>
-          `<p class="${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}: ${name} (${detail})</p>`)
+        .map(({ name, passed: ok, error }) =>
+          `<p class="${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}: ${name}${error ? ` — ${error.message}` : ""}</p>`)
         .join("");
       document.querySelector("#summary").textContent = `${passed} passed, ${failed} failed`;
       document.body.dataset.status = failed === 0 ? "passed" : "failed";
       window.__lineSpeedResults = { passed, failed, tests };
 
       if (failed > 0) {
-        throw new Error(`${failed} line speed check(s) failed`);
+        throw new Error(`${failed} production sigil check(s) failed`);
       }
     </script>
   </body>
