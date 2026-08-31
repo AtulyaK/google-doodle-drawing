@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sigil matcher checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; }
+    </style>
+  </head>
+  <body>
+    <h1>Sigil matcher checks</h1>
+    <div id="results"></div>
+    <script type="module">
+      import { FIRST_BINDING } from "../src/sigil-templates.js";
+      import { matchSigil, matchStrokeToTemplate } from "../src/sigil-matcher.js";
+
+      const results = document.querySelector("#results");
+      const tests = [];
+      const assert = (condition, message) => {
+        if (!condition) {
+          throw new Error(message);
+        }
+      };
+
+      const samplePolyline = (vertices, countPerSegment) => {
+        const points = [];
+        for (let segment = 0; segment < vertices.length - 1; segment += 1) {
+          const start = vertices[segment];
+          const end = vertices[segment + 1];
+          for (let index = 0; index < countPerSegment; index += 1) {
+            const progress = index / countPerSegment;
+            points.push({
+              x: start.x + (end.x - start.x) * progress,
+              y: start.y + (end.y - start.y) * progress,
+            });
+          }
+        }
+        points.push({ ...vertices[vertices.length - 1] });
+        return points;
+      };
+
+      const templatePoints = (stroke) =>
+        stroke.closed
+          ? stroke.points
+          : samplePolyline(stroke.points, 9);
+
+      const transform = (points, scale, offsetX, offsetY, noise = 0) =>
+        points.map((point, index) => ({
+          x: offsetX + point.x * scale + Math.sin(index * 1.71) * noise,
+          y: offsetY + point.y * scale + Math.cos(index * 1.23) * noise,
+        }));
+
+      const makeAttempt = ({
+        scale = 420,
+        offsetX = 100,
+        offsetY = 40,
+        noise = 0,
+        reverse = false,
+      } = {}) =>
+        FIRST_BINDING.strokes.map((stroke) => {
+          const points = transform(templatePoints(stroke), scale, offsetX, offsetY, noise);
+          return reverse ? points.reverse() : points;
+        });
+
+      const add = (name, check) => {
+        try {
+          check();
+          tests.push({ name, passed: true });
+        } catch (error) {
+          tests.push({ name, passed: false, error });
+        }
+      };
+
+      add("exact two-stroke sigil matches", () => {
+        const result = matchSigil(makeAttempt(), FIRST_BINDING);
+        assert(result.matched, `expected a match, got ${JSON.stringify(result)}`);
+        assert(result.confidence >= 0.6, "exact match confidence was too low");
+      });
+
+      add("smaller, translated, imperfect strokes remain forgiving", () => {
+        const result = matchSigil(
+          makeAttempt({ scale: 280, offsetX: 220, offsetY: 95, noise: 4 }),
+          FIRST_BINDING,
+        );
+        assert(result.matched, `imperfect match was rejected: ${JSON.stringify(result)}`);
+      });
+
+      add("stroke direction does not make a clear sigil fail", () => {
+        const result = matchSigil(makeAttempt({ reverse: true, noise: 2 }), FIRST_BINDING);
+        assert(result.matched, `reversed match was rejected: ${JSON.stringify(result)}`);
+      });
+
+      add("a straight second stroke is rejected as an egregious miss", () => {
+        const attempt = makeAttempt();
+        attempt[1] = transform(
+          samplePolyline([{ x: 0.34, y: 0.32 }, { x: 0.66, y: 0.32 }], 12),
+          420,
+          100,
+          40,
+        );
+        const result = matchSigil(attempt, FIRST_BINDING);
+        assert(!result.matched, "straight stroke was accepted as the apex");
+        assert(result.reason.includes("missing-corner"), `unexpected reason: ${result.reason}`);
+      });
+
+      add("an open ring is rejected", () => {
+        const attempt = makeAttempt();
+        attempt[0] = attempt[0].slice(0, 30);
+        const result = matchStrokeToTemplate(attempt[0], FIRST_BINDING.strokes[0]);
+        assert(!result.matched, "open ring was accepted");
+        assert(result.reason === "not-closed", `unexpected reason: ${result.reason}`);
+      });
+
+      add("strokes in separate locations are rejected together", () => {
+        const result = matchSigil(
+          [
+            transform(templatePoints(FIRST_BINDING.strokes[0]), 300, 50, 25),
+            transform(templatePoints(FIRST_BINDING.strokes[1]), 300, 420, 220),
+          ],
+          FIRST_BINDING,
+        );
+        assert(!result.matched, "separated strokes were accepted as one sigil");
+        assert(result.reason === "placement-mismatch", `unexpected reason: ${result.reason}`);
+      });
+
+      add("too few points are rejected", () => {
+        const result = matchStrokeToTemplate(
+          [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+          FIRST_BINDING.strokes[0],
+        );
+        assert(!result.matched && result.reason === "too-short", "short stroke was accepted");
+      });
+
+      results.innerHTML = tests
+        .map(({ name, passed, error }) =>
+          `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name}${error ? ` — ${error.message}` : ""}</p>`)
+        .join("");
+      document.body.dataset.status = tests.every(({ passed }) => passed) ? "passed" : "failed";
+      window.__sigilMatcherTestResults = tests;
+
+      if (tests.some(({ passed }) => !passed)) {
+        throw new Error("One or more sigil matcher checks failed.");
+      }
+    </script>
+  </body>
+</html>

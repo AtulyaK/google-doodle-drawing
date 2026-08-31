@@ -6,16 +6,16 @@ Doodle Motion is a browser prototype for drawing shapes with a fingertip tracked
 
 - **Initial camera experiment:** Doodle Motion began as a camera-based virtual pen: MediaPipe hand landmarks tracked an index fingertip while the browser captured and recognized drawn symbols.
 - **Resilience improvements:** The interaction now uses an explicit Spacebar drawing clutch, pauses and resumes through brief tracking loss, supports finishing a partial stroke, excludes movement after release, and cleans up camera/frame-loop state. Adaptive One Euro smoothing and deterministic geometry checks make recognition less fragile across short, sparse, rotated, or ambiguous strokes.
-- **Current prototype:** The app identifies four symbol categories: a line (horizontal, vertical, or diagonal), a V, a circle, and a triangle. Small, incomplete, or ambiguous traces are rejected instead of being presented as confident matches.
-- **Creative direction:** The next visual direction is an original drawing experience inspired by the sense of wonder and hand-drawn magic in *Witch Hat Atelier*. That is a direction for the project, not an implemented adaptation.
+- **Current prototype:** The app now guides the player through one original two-stroke sigil, **First Binding**: a vessel ring followed by an apex mark. A normalized matcher allows ordinary variation in size, position, noise, and stroke direction while still rejecting incomplete or clearly wrong marks. The earlier line, V, circle, and triangle recognizer remains the geometry foundation and regression reference.
+- **Creative direction:** The experience is inspired by the sense of wonder and hand-drawn magic in *Witch Hat Atelier*, without adapting its characters, setting, terminology, artwork, or story.
 - **Long-term possibility:** A future **Google Doodle Virtual Drawing** capability could grow this small prototype into a richer, camera-powered doodle experience. That broader capability is not implemented in the current repository.
 
 ## Roadmap / next steps
 
-1. Build one original two-stroke sigil: a ring plus a chevron, shown as a normalized virtual stencil with ordered stroke progress.
-2. Add a symbol-level finish action that validates the captured strokes together while preserving Spacebar as the stroke clutch.
-3. Add a first visual response—a glow/pulse—and a short generated tone for successful sigil completion.
-4. Expand into a data-driven library of original sigils, then explore what a broader Google Doodle Virtual Drawing experience should add beyond the current four-symbol prototype.
+1. Playtest and tune First Binding with a real camera across ordinary lighting, hand angles, and browser sizes.
+2. Add pointer/touch and keyboard practice paths with the same matcher and completion rules.
+3. Add a small set of original sigils only after the first one is reliable and fun.
+4. Explore what a broader Google Doodle Virtual Drawing experience should add beyond the current guided stencil.
 
 ## Run locally
 
@@ -35,13 +35,13 @@ The first load downloads the MediaPipe hand-landmark runtime and model from thei
 ## How to play
 
 1. Select **Start camera** and grant camera permission.
-2. Hold one hand in view, then press and hold **Space** to begin a stroke.
-3. Trace any supported shape with your index fingertip while continuing to hold **Space**. Hand roll and tilt do not cancel the stroke.
-4. Release **Space** to identify the shape. The release frame and all later movement are excluded, so returning your hand does not draw an extra line.
-5. If tracking is lost, keep holding **Space** and move your hand back into view to continue. Select **Finish stroke** to submit the points already captured instead.
-6. Draw another shape whenever you want; each clear identification increments the score.
+2. Hold one hand in view, then press and hold **Space** to begin the highlighted stroke.
+3. Trace the vessel ring with your index fingertip, then release **Space** to inscribe it.
+4. Trace the apex mark as the second stroke and release **Space** again.
+5. Select **Finish sigil** when both strokes are ready. A close attempt is accepted; an egregious miss gets a focused retry hint.
+6. If tracking is lost, keep holding **Space** and move your hand back into view, or select **Finish stroke** to submit the points already captured.
 
-The app identifies four primitive symbol categories with deterministic geometry heuristics: open strokes map to horizontal, vertical, or diagonal lines; open two-leg strokes map to a V; and closed loops are classified as circle or triangle. Very small, incomplete, or ambiguous strokes are rejected so the app can ask for a retry. Brief hand-tracking loss pauses the stroke and allows reacquisition instead of submitting it automatically.
+The current matcher compares each stroke to a normalized original template. It allows reasonable variation in scale, placement, noise, and direction, but rejects short, open, straight, or widely separated marks. Brief hand-tracking loss pauses the stroke and allows reacquisition instead of submitting it automatically.
 
 The interaction uses a keyboard clutch rather than a continuously evaluated “index finger up” pose. Holding Space explicitly opens the stroke boundary, and releasing it confirms the latest valid fingertip point. The fingertip cursor uses image landmarks and an adaptive One Euro filter for low-latency smoothing. The release frame and any movement after release are excluded from the submitted stroke.
 
@@ -64,3 +64,7 @@ Open <http://localhost:5173/tests/triangle-scale.test.html> for small and sparse
 Open <http://localhost:5173/tests/line-speed.test.html> for short-line and open-ended identification coverage through the production camera flow.
 
 Open <http://localhost:5173/tests/line-v-regression.test.html> for filtered short-line and V recognition regressions.
+
+Open <http://localhost:5173/tests/sigil-matcher.test.html> for forgiving First Binding matching and egregious-miss rejection checks.
+
+Open <http://localhost:5173/tests/capture-session.test.html> for ordered multi-stroke and Spacebar boundary checks.

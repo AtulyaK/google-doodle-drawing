@@ -4,19 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#111827" />
-    <title>Doodle Motion</title>
+    <title>Glyph Garden | Doodle Motion</title>
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
     <main class="app-shell">
       <header class="hero">
         <div>
-          <p class="eyebrow">Camera-powered drawing practice</p>
-          <h1>Doodle Motion</h1>
+          <p class="eyebrow">Camera-powered alchemy practice</p>
+          <h1>Glyph Garden</h1>
           <p class="hero-copy">
-            Start the camera, hold <kbd>Space</kbd> to draw any supported shape with your index
-            fingertip, and release <kbd>Space</kbd> to identify it. Movement after release is not
-            added to your stroke.
+            Start the camera, then trace an original two-part sigil with your index fingertip.
+            Hold <kbd>Space</kbd> for each stroke and release when you are ready to inscribe it.
           </p>
         </div>
         <div class="hero-badge" aria-label="On-device processing">
@@ -35,6 +34,7 @@
             <div class="toolbar-actions">
               <button id="startButton" class="button button-primary" type="button">Start camera</button>
               <button id="finishButton" class="button button-ghost" type="button" disabled>Finish stroke</button>
+              <button id="finishSigilButton" class="button button-ghost" type="button" disabled>Finish sigil</button>
               <button id="resetButton" class="button button-ghost" type="button">Reset</button>
             </div>
           </div>
@@ -44,22 +44,22 @@
             <canvas
               id="drawingCanvas"
               role="img"
-              aria-label="Finger drawing canvas"
+              aria-label="Alchemy sigil drawing canvas"
               aria-describedby="drawingGuide"
             ></canvas>
             <div id="stageMessage" class="stage-message">
               <div class="camera-icon" aria-hidden="true">◉</div>
               <strong>Start the camera and allow access</strong>
-              <span>Camera access requires localhost or HTTPS. Frames stay in this browser tab.</span>
+              <span>Frames stay in this browser tab. Your first stencil will appear when the camera is ready.</span>
             </div>
           </div>
 
           <ol id="drawingGuide" class="drawing-guide" aria-label="Drawing controls">
-            <li><strong>Hold <kbd>Space</kbd></strong> and trace with your index fingertip.</li>
-            <li><strong>Release <kbd>Space</kbd></strong> to submit; the release frame is excluded.</li>
+            <li><strong>Hold <kbd>Space</kbd></strong> and trace the highlighted stencil stroke.</li>
+            <li><strong>Release <kbd>Space</kbd></strong> to inscribe that stroke; the release frame is excluded.</li>
             <li>
-              If tracking is lost, keep holding <kbd>Space</kbd> and return your hand to view, or
-              select <strong>Finish stroke</strong> to submit the points already captured.
+              Finish both strokes, then select <strong>Finish sigil</strong> to awaken the mark.
+              If tracking is lost, keep holding <kbd>Space</kbd> or finish the points already captured.
             </li>
           </ol>
         </div>
@@ -67,66 +67,39 @@
         <aside class="challenge-card">
           <div class="challenge-header">
             <div>
-              <p class="section-label">Shape identification</p>
-              <h2 id="challengeTitle">Identify the shape</h2>
+              <p class="section-label">Original sigil</p>
+              <h2 id="challengeTitle">First Binding</h2>
             </div>
-            <div class="progress-pill"><span id="score">0</span> identified</div>
+            <div class="progress-pill"><span id="score">0</span> completed</div>
           </div>
 
           <div
             id="targetPreview"
-            class="target-preview target-identification"
-            aria-label="Supported shapes: line, circle, triangle, V"
+            class="target-preview target-sigil"
+            aria-label="First Binding sigil: a vessel ring followed by a pointed apex"
           >
             <svg
-              class="target-artwork target-artwork-line"
-              viewBox="0 0 240 160"
+              class="target-artwork target-artwork-sigil"
+              viewBox="0 0 240 240"
               aria-hidden="true"
               focusable="false"
             >
-              <line x1="38" y1="80" x2="202" y2="80"></line>
-              <circle cx="38" cy="80" r="8"></circle>
-              <circle cx="202" cy="80" r="8"></circle>
-            </svg>
-            <svg
-              class="target-artwork target-artwork-circle"
-              viewBox="0 0 240 160"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <circle cx="120" cy="80" r="54"></circle>
-            </svg>
-            <svg
-              class="target-artwork target-artwork-triangle"
-              viewBox="0 0 240 160"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path d="M120 34 184 126H56Z"></path>
-            </svg>
-            <svg
-              class="target-artwork target-artwork-v"
-              viewBox="0 0 240 160"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path d="M42 40 120 126 198 40"></path>
+              <circle cx="120" cy="120" r="72"></circle>
+              <path d="M82 92 120 164 158 92"></path>
             </svg>
           </div>
 
           <div class="feedback-panel" aria-live="polite">
             <p id="feedbackTitle">Ready when you are</p>
             <p id="feedbackDetail">
-              Draw any supported shape, then release Space to identify it.
+              Trace the vessel ring first, then the apex, and finish the sigil when both are ready.
             </p>
           </div>
 
-          <div class="shape-key" aria-label="Supported shapes">
-            <span class="shape-key-item" data-shape-key="line">Line</span>
-            <span class="shape-key-item" data-shape-key="circle">Circle</span>
-            <span class="shape-key-item" data-shape-key="triangle">Triangle</span>
-            <span class="shape-key-item" data-shape-key="v">V</span>
-          </div>
+          <ol id="sigilProgress" class="sigil-progress" aria-label="Sigil progress">
+            <li data-stroke-key="vessel"><span class="progress-index">1</span><span>Vessel ring</span></li>
+            <li data-stroke-key="apex"><span class="progress-index">2</span><span>Apex mark</span></li>
+          </ol>
         </aside>
       </section>
 

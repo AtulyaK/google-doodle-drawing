@@ -1,17 +1,13 @@
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm";
 import { VectorOneEuroFilter } from "./one-euro-filter.js";
-import { recognizeStroke } from "./recognizer.js";
+import { createCaptureSession } from "./capture-session.js";
 import { createSpacebarClutch } from "./spacebar-clutch.js";
+import { FIRST_BINDING, templatePointToStage } from "./sigil-templates.js";
+import { matchSigil, matchStrokeToTemplate } from "./sigil-matcher.js";
 
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
-const SHAPE_LABELS = {
-  line: "line",
-  v: "V",
-  circle: "circle",
-  triangle: "triangle",
-};
 
 const PHASE = Object.freeze({
   IDLE: "idle",
@@ -35,6 +31,7 @@ const elements = {
   status: document.querySelector("#status"),
   startButton: document.querySelector("#startButton"),
   finishButton: document.querySelector("#finishButton"),
+  finishSigilButton: document.querySelector("#finishSigilButton"),
   resetButton: document.querySelector("#resetButton"),
   challengeTitle: document.querySelector("#challengeTitle"),
   targetPreview: document.querySelector("#targetPreview"),
@@ -42,10 +39,11 @@ const elements = {
   feedbackDetail: document.querySelector("#feedbackDetail"),
   feedbackPanel: document.querySelector(".feedback-panel"),
   score: document.querySelector("#score"),
-  shapeKeys: [...document.querySelectorAll("[data-shape-key]")],
+  progressItems: [...document.querySelectorAll("[data-stroke-key]")],
 };
 
 const context = elements.canvas.getContext("2d");
+const captureSession = createCaptureSession(FIRST_BINDING.strokes.length);
 const state = {
   phase: PHASE.IDLE,
   phaseSince: 0,
@@ -55,10 +53,12 @@ const state = {
   lastVideoTime: -1,
   lastFrameTimestamp: null,
   stroke: [],
+  committedStrokes: [],
   cursor: null,
   pauseSince: null,
   pointFilter: new VectorOneEuroFilter({ minCutoff: 1.1, beta: 0.08 }),
   score: 0,
+  sigilCompleted: false,
   busy: false,
 };
 
@@ -73,6 +73,12 @@ function setFeedback(title, detail, tone = "neutral") {
   elements.feedbackPanel?.setAttribute("data-tone", tone);
 }
 
+function syncCaptureState() {
+  const captureState = captureSession.state;
+  state.stroke = captureState.activeStroke;
+  state.committedStrokes = captureState.completedStrokes;
+}
+
 function updateFinishButton() {
   if (!elements.finishButton) {
     return;
@@ -82,13 +88,22 @@ function updateFinishButton() {
     state.stroke.length >= MIN_STROKE_POINTS &&
     [PHASE.DRAWING, PHASE.PAUSED].includes(state.phase);
   elements.finishButton.disabled = !canFinish;
+  elements.finishSigilButton.disabled =
+    state.committedStrokes.length !== FIRST_BINDING.strokes.length || state.sigilCompleted;
 }
 
-function detectedShapeLabel(result) {
-  if (result.shape === "line" && result.orientation) {
-    return `${result.orientation} line`;
-  }
-  return SHAPE_LABELS[result.shape] ?? result.shape;
+function currentStrokeTemplate() {
+  return FIRST_BINDING.strokes[state.committedStrokes.length] ?? null;
+}
+
+function currentStrokeLabel() {
+  return currentStrokeTemplate()?.label ?? "next stencil stroke";
+}
+
+function readyStatusMessage() {
+  return state.committedStrokes.length === FIRST_BINDING.strokes.length
+    ? "Both strokes are ready — select Finish sigil."
+    : `Press and hold Space to draw the ${currentStrokeLabel()}.`;
 }
 
 function setPhase(phase, timestamp, statusMessage, tone = "neutral") {
@@ -139,7 +154,11 @@ function appendSample(buffer, point, timestamp, allowBridge = true) {
   }
 }
 
-function transitionToReady(timestamp, statusMessage = "Press and hold Space to draw", tone = "neutral") {
+function transitionToReady(
+  timestamp,
+  statusMessage = readyStatusMessage(),
+  tone = "neutral",
+) {
   state.pauseSince = null;
   setPhase(PHASE.READY, timestamp, statusMessage, tone);
 }
@@ -150,38 +169,53 @@ function transitionToIdle(timestamp, statusMessage = "Camera is off") {
 }
 
 function beginStroke(timestamp) {
-  state.stroke = [];
+  captureSession.dispatch({ type: "start" });
+  syncCaptureState();
   state.pointFilter.reset();
   state.pauseSince = null;
-  setPhase(PHASE.DRAWING, timestamp, "Space held — move your index finger to draw.", "active");
+  setPhase(
+    PHASE.DRAWING,
+    timestamp,
+    `Space held — trace the ${currentStrokeLabel()}.`,
+    "active",
+  );
 }
 
 function resumeDrawing(timestamp, statusMessage = "Drawing...") {
   state.pauseSince = null;
   state.pointFilter.reset();
+  captureSession.dispatch({ type: "resume" });
+  syncCaptureState();
   setPhase(PHASE.DRAWING, timestamp, statusMessage, "active");
 }
 
 function transitionToPaused(timestamp) {
   state.pauseSince = timestamp;
+  captureSession.dispatch({ type: "pause" });
+  syncCaptureState();
   setPhase(PHASE.PAUSED, timestamp, "Tracking lost — keep holding Space or use Finish stroke.", "neutral");
 }
 
-function transitionToSubmitted(timestamp, tone = "success") {
-  setPhase(PHASE.SUBMITTED, timestamp, "Stroke submitted", tone);
+function transitionToSubmitted(timestamp, statusMessage, tone = "success") {
+  setPhase(PHASE.SUBMITTED, timestamp, statusMessage, tone);
 }
 
 function updateChallenge() {
-  elements.challengeTitle.textContent = "Identify the shape";
-  elements.targetPreview.className = "target-preview target-identification";
+  elements.challengeTitle.textContent = FIRST_BINDING.name;
+  elements.targetPreview.className = "target-preview target-sigil";
   elements.targetPreview.setAttribute(
     "aria-label",
-    "Supported shapes: line, circle, triangle, V",
+    "First Binding sigil: a vessel ring followed by a pointed apex",
   );
   elements.score.textContent = state.score;
-  elements.shapeKeys.forEach((item) => {
-    item.classList.remove("is-active", "is-complete");
+  elements.progressItems.forEach((item, index) => {
+    item.classList.toggle("is-complete", index < state.committedStrokes.length);
+    item.classList.toggle(
+      "is-active",
+      index === state.committedStrokes.length && !state.sigilCompleted,
+    );
   });
+  updateFinishButton();
 }
 
 function resizeCanvas() {
@@ -208,19 +242,22 @@ function canvasPoint(point) {
   };
 }
 
-function drawStroke() {
-  if (state.stroke.length < 2) {
+function drawPath(points, { color, width, dash = [], glow = false }) {
+  if (points.length < 2) {
     return;
   }
   context.save();
-  context.lineWidth = 5;
+  context.lineWidth = width;
   context.lineCap = "round";
   context.lineJoin = "round";
-  context.strokeStyle = "#f97316";
-  context.shadowColor = "rgba(249, 115, 22, 0.35)";
-  context.shadowBlur = 12;
+  context.strokeStyle = color;
+  context.setLineDash(dash);
+  if (glow) {
+    context.shadowColor = "rgba(249, 115, 22, 0.35)";
+    context.shadowBlur = 12;
+  }
   context.beginPath();
-  state.stroke.forEach((point, index) => {
+  points.forEach((point, index) => {
     if (index === 0) {
       context.moveTo(point.x, point.y);
     } else {
@@ -231,9 +268,48 @@ function drawStroke() {
   context.restore();
 }
 
+function drawStencil(rect) {
+  FIRST_BINDING.strokes.forEach((stroke, index) => {
+    const points = stroke.points.map((point) =>
+      templatePointToStage(point, rect.width, rect.height),
+    );
+    const isComplete = index < state.committedStrokes.length;
+    const isCurrent = index === state.committedStrokes.length && !state.sigilCompleted;
+    drawPath(points, {
+      color: isComplete
+        ? "rgba(52, 211, 153, 0.28)"
+        : isCurrent
+          ? "rgba(196, 181, 253, 0.72)"
+          : "rgba(148, 163, 184, 0.2)",
+      width: isCurrent ? 3 : 2,
+      dash: isComplete ? [] : [7, 9],
+    });
+  });
+}
+
+function drawCommittedStrokes() {
+  state.committedStrokes.forEach((stroke) => {
+    drawPath(stroke, {
+      color: "#34d399",
+      width: 5,
+      glow: state.sigilCompleted,
+    });
+  });
+}
+
+function drawStroke() {
+  drawPath(state.stroke, {
+    color: "#f97316",
+    width: 5,
+    glow: true,
+  });
+}
+
 function redraw(cursor = null) {
   const rect = elements.stage.getBoundingClientRect();
   context.clearRect(0, 0, rect.width, rect.height);
+  drawStencil(rect);
+  drawCommittedStrokes();
   drawStroke();
   if (cursor) {
     context.save();
@@ -249,7 +325,8 @@ function redraw(cursor = null) {
 }
 
 function clearStroke() {
-  state.stroke = [];
+  captureSession.dispatch({ type: "discard", reason: "clear" });
+  syncCaptureState();
   state.pauseSince = null;
   state.pointFilter.reset();
   redraw();
@@ -259,45 +336,127 @@ function appendPoint(point, timestamp) {
   if (!spacebarClutch.held) {
     return;
   }
-  appendSample(state.stroke, point, timestamp, true);
+  const previousLength = state.stroke.length;
+  const nextStroke = [...state.stroke];
+  appendSample(nextStroke, point, timestamp, true);
+  nextStroke.slice(previousLength).forEach((sample) => {
+    captureSession.dispatch({ type: "append", point: sample });
+    syncCaptureState();
+  });
+  if (nextStroke.length === previousLength) {
+    syncCaptureState();
+  }
   redraw(point);
 }
 
 function resetStrokeLifecycle() {
-  state.stroke = [];
+  captureSession.dispatch({ type: "reset" });
+  syncCaptureState();
   state.cursor = null;
   state.pauseSince = null;
+  state.sigilCompleted = false;
   spacebarClutch.reset();
   state.pointFilter.reset();
   updateFinishButton();
 }
 
-function submitStroke(timestamp) {
-  const rawStroke = state.stroke.map((point) => ({ x: point.x, y: point.y }));
-  let result = { shape: null, confidence: 0 };
-
-  if (rawStroke.length >= MIN_STROKE_POINTS) {
-    result = recognizeStroke(rawStroke);
+function strokeRetryHint(result, template) {
+  if (result.reason === "too-short") {
+    return `Keep holding Space a little longer while tracing the ${template.label}.`;
   }
+  if (result.reason === "not-closed") {
+    return "Bring the end of the vessel back near where you began.";
+  }
+  if (result.reason === "missing-corner") {
+    return "Give the apex one clear point instead of a straight line.";
+  }
+  return `That mark was close. Follow the ${template.label} stencil and try once more.`;
+}
 
-  if (result.shape) {
-    state.score += 1;
+function submitStroke(timestamp, finishReason = "release") {
+  const rawStroke = state.stroke.map((point) => ({ x: point.x, y: point.y }));
+  const template = currentStrokeTemplate();
+  const result = template
+    ? matchStrokeToTemplate(rawStroke, template)
+    : { matched: false, confidence: 0, reason: "stroke-count" };
+
+  if (result.matched) {
+    captureSession.dispatch({ type: "finish", reason: finishReason });
+    syncCaptureState();
+    const completedAllStrokes =
+      state.committedStrokes.length === FIRST_BINDING.strokes.length;
     setFeedback(
-      "Shape identified",
-      `I identified a ${detectedShapeLabel(result)}. Draw another supported shape whenever you're ready.`,
+      `${template.label} inscribed`,
+      completedAllStrokes
+        ? "Both strokes are ready. Select Finish sigil to awaken the mark."
+        : `Good start. Now trace the ${currentStrokeLabel()} and release Space when you are ready.`,
       "success",
     );
     updateChallenge();
+    transitionToSubmitted(
+      timestamp,
+      completedAllStrokes ? "Both strokes ready" : `${template.label} inscribed`,
+      "success",
+    );
   } else {
+    captureSession.dispatch({ type: "discard", reason: "rejected" });
+    syncCaptureState();
     setFeedback(
-      "Shape not clear yet",
-      "Try a larger, clearer line, circle, triangle, or V, then release Space when you are finished.",
+      "That stroke needs another try",
+      template ? strokeRetryHint(result, template) : "Choose the next stencil stroke and try again.",
       "warning",
     );
+    transitionToSubmitted(timestamp, "Stroke needs another try", "warning");
   }
 
-  clearStroke();
-  transitionToSubmitted(timestamp, result.shape ? "success" : "warning");
+  state.cursor = null;
+  state.pauseSince = null;
+  state.pointFilter.reset();
+  redraw();
+}
+
+function resetAttempt() {
+  captureSession.dispatch({ type: "reset" });
+  syncCaptureState();
+  state.cursor = null;
+  state.pauseSince = null;
+  state.sigilCompleted = false;
+  state.pointFilter.reset();
+  updateChallenge();
+  redraw();
+}
+
+function finishSigil() {
+  if (
+    state.committedStrokes.length !== FIRST_BINDING.strokes.length ||
+    state.sigilCompleted ||
+    state.phase === PHASE.IDLE
+  ) {
+    return;
+  }
+
+  const result = matchSigil(state.committedStrokes, FIRST_BINDING);
+  if (result.matched) {
+    state.score += 1;
+    state.sigilCompleted = true;
+    setFeedback(
+      "Sigil awakened",
+      "The First Binding is complete. Press Space to draw it again or Reset to clear the score.",
+      "success",
+    );
+    updateChallenge();
+    transitionToSubmitted(performance.now(), "Sigil awakened", "success");
+    redraw();
+    return;
+  }
+
+  resetAttempt();
+  setFeedback(
+    "The sigil needs another try",
+    "The pieces were clear, but their placement drifted apart. Start again and keep the apex inside the vessel.",
+    "warning",
+  );
+  transitionToSubmitted(performance.now(), "Sigil needs another try", "warning");
 }
 
 function handleLandmarks(landmarks, timestamp) {
@@ -308,7 +467,7 @@ function handleLandmarks(landmarks, timestamp) {
       clearStroke();
       transitionToReady(timestamp);
       return;
-    } else if (state.phase === PHASE.SUBMITTED) {
+    } else if (state.phase === PHASE.SUBMITTED && !state.sigilCompleted) {
       transitionToReady(timestamp);
     }
     if (hadCursor) {
@@ -323,7 +482,9 @@ function handleLandmarks(landmarks, timestamp) {
   state.cursor = fingertip;
 
   if (state.phase === PHASE.SUBMITTED) {
-    transitionToReady(timestamp);
+    if (!state.sigilCompleted) {
+      transitionToReady(timestamp);
+    }
     redraw(fingertip);
     return;
   }
@@ -355,7 +516,7 @@ function handleTrackingLoss(timestamp) {
 
   if (state.phase === PHASE.DRAWING) {
     transitionToPaused(timestamp);
-  } else if (state.phase === PHASE.SUBMITTED) {
+  } else if (state.phase === PHASE.SUBMITTED && !state.sigilCompleted) {
     transitionToReady(timestamp);
   }
 
@@ -431,16 +592,24 @@ function canStartSpacebarStroke(event) {
   }
 
   event.preventDefault();
+  if (state.committedStrokes.length >= FIRST_BINDING.strokes.length) {
+    if (!state.sigilCompleted) {
+      setStatus("Both strokes are ready — select Finish sigil.", "success");
+      return false;
+    }
+    resetAttempt();
+    transitionToReady(performance.now(), "Press and hold Space to draw the Vessel again.", "success");
+  }
   if (state.phase === PHASE.SUBMITTED) {
     transitionToReady(performance.now());
   }
   return state.phase === PHASE.READY;
 }
 
-function finishSpacebarStroke() {
+function finishSpacebarStroke(reason) {
   state.cursor = null;
   if ([PHASE.DRAWING, PHASE.PAUSED].includes(state.phase)) {
-    submitStroke(performance.now());
+    submitStroke(performance.now(), reason);
   }
 }
 
@@ -491,10 +660,14 @@ async function startCamera() {
       throw new Error("The camera connection ended before hand tracking was ready.");
     }
     state.handLandmarker = handLandmarker;
-    transitionToReady(performance.now(), "Camera ready — hold Space to draw", "success");
+    transitionToReady(
+      performance.now(),
+      "Camera ready — hold Space to draw the Vessel.",
+      "success",
+    );
     setFeedback(
       "Hold Space to draw",
-      "Hold Space while tracing any supported shape with your index fingertip, then release to identify it.",
+      "Trace the Vessel ring first, then the Apex mark. Release Space after each stroke.",
       "neutral",
     );
     scheduleFrame();
@@ -530,11 +703,10 @@ function stopCamera() {
 function resetGame() {
   state.score = 0;
   resetStrokeLifecycle();
-  clearStroke();
   updateChallenge();
   setFeedback(
     "Ready when you are",
-    "Start the camera, hold Space to draw any supported shape, then release it for identification.",
+    "Start the camera, trace both stencil strokes, then select Finish sigil.",
   );
   if (state.stream) {
     transitionToReady(performance.now(), "Camera ready", "success");
@@ -552,6 +724,7 @@ const spacebarClutch = createSpacebarClutch({
 
 elements.startButton.addEventListener("click", startCamera);
 elements.finishButton?.addEventListener("click", finishStroke);
+elements.finishSigilButton?.addEventListener("click", finishSigil);
 elements.resetButton.addEventListener("click", resetGame);
 window.addEventListener("pagehide", stopCamera);
 window.addEventListener("resize", resizeCanvas);

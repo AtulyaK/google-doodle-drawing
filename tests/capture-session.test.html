@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Capture session checks</title>
+    <style>
+      body { font: 16px system-ui; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+      .pass { color: #087f5b; }
+      .fail { color: #c92a2a; }
+    </style>
+  </head>
+  <body>
+    <h1>Capture session checks</h1>
+    <div id="results"></div>
+    <script type="module">
+      import {
+        CAPTURE_PHASE,
+        createCaptureSession,
+      } from "../src/capture-session.js";
+
+      const results = document.querySelector("#results");
+      const tests = [];
+      const assert = (condition, message) => {
+        if (!condition) {
+          throw new Error(message);
+        }
+      };
+      const point = (x, y) => ({ x, y, t: performance.now() });
+      const add = (name, check) => {
+        try {
+          check();
+          tests.push({ name, passed: true });
+        } catch (error) {
+          tests.push({ name, passed: false, error });
+        }
+      };
+
+      add("one Space-bounded stroke commits on release", () => {
+        const session = createCaptureSession(2);
+        session.dispatch({ type: "start" });
+        session.dispatch({ type: "append", point: point(10, 20) });
+        session.dispatch({ type: "append", point: point(20, 30) });
+        session.dispatch({ type: "finish", reason: "release" });
+        const committed = session.state.completedStrokes;
+        session.dispatch({ type: "append", point: point(90, 90) });
+
+        assert(session.state.phase === CAPTURE_PHASE.READY, "session did not return to ready");
+        assert(committed.length === 1, "stroke was not committed");
+        assert(committed[0].length === 2, "wrong points were committed");
+        assert(session.state.completedStrokes[0].length === 2, "post-release point leaked");
+        assert(session.state.lastFinishReason === "release", "finish reason was lost");
+      });
+
+      add("tracking pause and recovery stay inside the same stroke", () => {
+        const session = createCaptureSession(2);
+        session.dispatch({ type: "start" });
+        session.dispatch({ type: "append", point: point(10, 10) });
+        session.dispatch({ type: "pause" });
+        session.dispatch({ type: "append", point: point(20, 20) });
+        assert(session.state.activeStroke.length === 1, "paused session captured a point");
+        session.dispatch({ type: "resume" });
+        session.dispatch({ type: "append", point: point(30, 30) });
+        session.dispatch({ type: "finish", reason: "manual" });
+
+        assert(session.state.completedStrokes[0].length === 2, "recovery split the stroke");
+        assert(session.state.lastFinishReason === "manual", "manual reason was lost");
+      });
+
+      add("ordered strokes remain available until the sigil is finished", () => {
+        const session = createCaptureSession(2);
+        session.dispatch({ type: "start" });
+        session.dispatch({ type: "append", point: point(10, 10) });
+        session.dispatch({ type: "finish", reason: "release" });
+        session.dispatch({ type: "start" });
+        session.dispatch({ type: "append", point: point(20, 20) });
+        session.dispatch({ type: "finish", reason: "release" });
+        const beforeReset = session.state;
+        session.dispatch({ type: "start" });
+
+        assert(beforeReset.completedStrokes.length === 2, "both strokes were not retained");
+        assert(session.state.phase === CAPTURE_PHASE.READY, "third stroke was allowed");
+        assert(session.state.activeStroke.length === 0, "third stroke captured points");
+      });
+
+      add("reset clears an abandoned attempt", () => {
+        const session = createCaptureSession(2);
+        session.dispatch({ type: "start" });
+        session.dispatch({ type: "append", point: point(10, 10) });
+        session.dispatch({ type: "reset" });
+
+        assert(session.state.phase === CAPTURE_PHASE.READY, "reset did not return to ready");
+        assert(session.state.activeStroke.length === 0, "reset kept an active stroke");
+        assert(session.state.completedStrokes.length === 0, "reset kept committed strokes");
+      });
+
+      results.innerHTML = tests
+        .map(({ name, passed, error }) =>
+          `<p class="${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}: ${name}${error ? ` — ${error.message}` : ""}</p>`)
+        .join("");
+      document.body.dataset.status = tests.every(({ passed }) => passed) ? "passed" : "failed";
+      window.__captureSessionTestResults = tests;
+
+      if (tests.some(({ passed }) => !passed)) {
+        throw new Error("One or more capture session checks failed.");
+      }
+    </script>
+  </body>
+</html>
